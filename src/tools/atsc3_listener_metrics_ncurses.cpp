@@ -102,6 +102,7 @@ int PACKET_COUNTER=0;
 
 
 #define _ENABLE_DEBUG true
+#define _PLAY_PCAP_FILE true
 
 
 //commandline stream filtering
@@ -407,6 +408,40 @@ void* pcap_loop_run_thread(void* dev_pointer) {
     return 0;
 }
 
+void* pcap_loop_run_thread_with_file(void* file_pointer) {
+	char* filename = (char*) file_pointer;
+
+	char errbuf[PCAP_ERRBUF_SIZE];
+	pcap_t* descr;
+	struct bpf_program fp;
+	bpf_u_int32 maskp;
+	bpf_u_int32 netp;
+	
+    __INFO("pcap file: %s", filename);
+	//pcap_lookupnet(dev, &netp, &maskp, errbuf);
+    descr = pcap_open_offline(filename, errbuf);
+
+    if(descr == NULL) {
+        printf("pcap_open_live(): %s",errbuf);
+        exit(1);
+    }
+
+    char filter[] = "udp";
+    if(pcap_compile(descr,&fp, filter,0,netp) == -1) {
+        fprintf(stderr,"Error calling pcap_compile");
+        exit(1);
+    }
+
+    if(pcap_setfilter(descr,&fp) == -1) {
+        fprintf(stderr,"Error setting filter");
+        exit(1);
+    }
+
+    pcap_loop(descr,-1,process_packet,NULL);
+
+    return 0;
+}
+
 
 /**
  *
@@ -539,7 +574,11 @@ int main(int argc,char **argv) {
 
 	
 	pthread_t global_pcap_thread_id;
-		int pcap_ret = pthread_create(&global_pcap_thread_id, NULL, pcap_loop_run_thread, (void*)dev);
+#if _PLAY_PCAP_FILE
+    int pcap_ret = pthread_create(&global_pcap_thread_id, NULL, pcap_loop_run_thread_with_file, (void*)dev);
+#else	
+    int pcap_ret = pthread_create(&global_pcap_thread_id, NULL, pcap_loop_run_thread, (void*)dev);
+#endif
 	assert(!pcap_ret);
 
     
@@ -547,7 +586,11 @@ int main(int argc,char **argv) {
 	pthread_join(global_ncurses_input_thread_id, NULL);
 
 #else
-	pcap_loop_run_thread(dev);
+#if _PLAY_PCAP_FILE
+      pcap_loop_run_thread_with_file(dev);
+#else
+      pcap_loop_run_thread(dev);        
+#endif
 #endif
 
 
