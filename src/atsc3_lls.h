@@ -26,7 +26,7 @@ extern int _LLS_DEBUG_ENABLED;
 extern int _LLS_TRACE_ENABLED;
 
 
-#define LLS_DST_ADDR 3758102332
+#define LLS_DST_ADDR 3758102332 //0xE0_00_17_3C -> 224_0_23_60
 #define LLS_DST_PORT 4937
 
 lls_table_t* lls_create_base_table(block_t* lls_packet_block);

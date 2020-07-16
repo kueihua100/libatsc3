@@ -103,6 +103,7 @@ int PACKET_COUNTER=0;
 
 #define _ENABLE_DEBUG true
 #define _PLAY_PCAP_FILE true
+#define _MULTI_THREAD false
 
 
 //commandline stream filtering
@@ -241,6 +242,16 @@ alc_packet_t* route_parse_from_udp_packet(lls_sls_alc_session_t *matching_lls_sl
         int retval = alc_rx_analyze_packet_a331_compliant((char*)block_Get(udp_packet->data), block_Remaining_size(udp_packet->data), &alc_packet);
         if(!retval) {
             atsc3_global_statistics->packet_counter_alc_packets_parsed++;
+
+            #if !_MULTI_THREAD
+            {
+                lls_sls_alc_monitor_t* lls_sls_alc_monitor = lls_sls_alc_monitor_create();
+                lls_sls_alc_monitor->lls_alc_session = matching_lls_slt_alc_session;
+                lls_sls_alc_monitor->lls_sls_monitor_output_buffer_mode.file_dump_enabled = true;
+                lls_slt_monitor->lls_sls_alc_monitor = lls_sls_alc_monitor;
+                goto ret;
+            }
+            #endif
             
             //don't dump unless this is pointing to our monitor session
             if(lls_slt_monitor->lls_sls_alc_monitor &&  lls_slt_monitor->lls_sls_alc_monitor->lls_alc_session && lls_slt_monitor->lls_sls_alc_monitor->lls_alc_session->service_id == matching_lls_slt_alc_session->service_id) {
@@ -416,29 +427,37 @@ void* pcap_loop_run_thread_with_file(void* file_pointer) {
 	struct bpf_program fp;
 	bpf_u_int32 maskp;
 	bpf_u_int32 netp;
-	
-    __INFO("pcap file: %s", filename);
-	//pcap_lookupnet(dev, &netp, &maskp, errbuf);
-    descr = pcap_open_offline(filename, errbuf);
+	int time = 0;
 
-    if(descr == NULL) {
-        printf("pcap_open_live(): %s",errbuf);
-        exit(1);
-    }
+    //use do-while loop to repeat play pcap file
+	do {
+        __INFO("pcap file: %s", filename);
+    	//pcap_lookupnet(dev, &netp, &maskp, errbuf);
+        descr = pcap_open_offline(filename, errbuf);
 
-    char filter[] = "udp";
-    if(pcap_compile(descr,&fp, filter,0,netp) == -1) {
-        fprintf(stderr,"Error calling pcap_compile");
-        exit(1);
-    }
+        if(descr == NULL) {
+            printf("pcap_open_live(): %s",errbuf);
+            exit(1);
+        }
 
-    if(pcap_setfilter(descr,&fp) == -1) {
-        fprintf(stderr,"Error setting filter");
-        exit(1);
-    }
+        char filter[] = "udp";
+        if(pcap_compile(descr,&fp, filter,0,netp) == -1) {
+            fprintf(stderr,"Error calling pcap_compile");
+            exit(1);
+        }
 
-    pcap_loop(descr,-1,process_packet,NULL);
+        if(pcap_setfilter(descr,&fp) == -1) {
+            fprintf(stderr,"Error setting filter");
+            exit(1);
+        }
 
+        int ii = pcap_loop(descr,-1,process_packet,NULL);
+        __INFO("pcap_loop(%d) retrun: %d", time);
+        pcap_close(descr);
+        descr = NULL;
+        time++;
+    }while (0);
+    
     return 0;
 }
 
@@ -453,7 +472,7 @@ int main(int argc,char **argv) {
 
 	_MMT_MPU_PARSER_DEBUG_ENABLED = 1;
 	_MMTP_DEBUG_ENABLED = 1;
-	_LLS_DEBUG_ENABLED = 0;
+	//_LLS_DEBUG_ENABLED = 0;
     _ISOBMFF_TOOLS_DEBUG_ENABLED = 1;
     _PLAYER_FFPLAY_DEBUG_ENABLED = 1;
     _PLAYER_FFPLAY_TRACE_ENABLED = 0;
@@ -549,7 +568,7 @@ int main(int argc,char **argv) {
 
 
 #ifndef _TEST_RUN_VALGRIND_OSX_
-
+  #if _MULTI_THREAD
 	//block sigpipe before creating our threads
 	sigemptyset (&player_signal_mask);
 	sigaddset (&player_signal_mask, SIGPIPE);
@@ -571,7 +590,7 @@ int main(int argc,char **argv) {
 
 	pthread_t global_slt_thread_id;
 	pthread_create(&global_slt_thread_id, NULL, print_lls_instance_table_thread, (void*)lls_slt_monitor);
-
+  #endif
 	
 	pthread_t global_pcap_thread_id;
 #if _PLAY_PCAP_FILE
@@ -583,8 +602,9 @@ int main(int argc,char **argv) {
 
     
 	pthread_join(global_pcap_thread_id, NULL);
+  #if _MULTI_THREAD	
 	pthread_join(global_ncurses_input_thread_id, NULL);
-
+  #endif
 #else
 #if _PLAY_PCAP_FILE
       pcap_loop_run_thread_with_file(dev);

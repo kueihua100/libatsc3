@@ -49,9 +49,9 @@
 #include "atsc3_aeat_parser.h"
 #include "atsc3_lls_types.h"
 
-int _LLS_INFO_ENABLED  = 0;
-int _LLS_DEBUG_ENABLED = 0;
-int _LLS_TRACE_ENABLED = 0;
+int _LLS_INFO_ENABLED  = 1;
+int _LLS_DEBUG_ENABLED = 1;
+int _LLS_TRACE_ENABLED = 1;
 
 char* LLS_SERVICE_CATEGORY_VALUES[] = {"atsc reserved", "linear av", "linear audio", "app based svc.", "esg service", "eas service", "certificateData", "atsc other" };
 //jjustman-2020-03-10: note: 0xFE=>"SignedMultiTable", 0xFF=>"UserDefined"
