@@ -76,7 +76,7 @@ int dump_lls(const char *format, ...)  {
 }
 
 #define _LLS_DUMPLN(...) dump_lls(__VA_ARGS__);dump_lls("%s%s","\r","\n")
-#define _LLS_DUMPT(...)  if(_LLS_DUMP_ENABLED) { dump_lls("%s:%d:%.4f: ",__FILE__,__LINE__, gt());_LLS_DUMPLN(__VA_ARGS__); }
+#define _LLS_DUMPT(...)  if(_LLS_DUMP_ENABLED) { dump_lls("%s:%d:[%.4f]: ",__FILE__,__LINE__, gt());_LLS_DUMPLN(__VA_ARGS__); }
 #define _LLS_DUMPN(...)  if(_LLS_DUMP_ENABLED) { _LLS_DUMPLN(__VA_ARGS__); }
 
 
