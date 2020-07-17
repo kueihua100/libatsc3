@@ -37,7 +37,7 @@ all: 	intermediate_lls \
 
 clean:
 	-rm -f *.o
-	-rm -f route/*
+	-rm -f tools/route/*
 	-rm -f mpu/*
 	-rm -f test/atsc3_lmt_test
 	-rm -f test/atsc3_lls_slt_parser_test
