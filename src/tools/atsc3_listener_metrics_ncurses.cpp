@@ -247,6 +247,7 @@ alc_packet_t* route_parse_from_udp_packet(lls_sls_alc_session_t *matching_lls_sl
             {
                 lls_sls_alc_monitor_t* lls_sls_alc_monitor = lls_sls_alc_monitor_create();
                 lls_sls_alc_monitor->lls_alc_session = matching_lls_slt_alc_session;
+                lls_sls_alc_monitor->atsc3_lls_slt_service = matching_lls_slt_alc_session->atsc3_lls_slt_service;
                 lls_sls_alc_monitor->lls_sls_monitor_output_buffer_mode.file_dump_enabled = true;
                 lls_slt_monitor->lls_sls_alc_monitor = lls_sls_alc_monitor;
                 goto ret;
