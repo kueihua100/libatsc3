@@ -105,7 +105,6 @@ int PACKET_COUNTER=0;
 #define _PLAY_PCAP_FILE true
 #define _MULTI_THREAD false
 
-
 //commandline stream filtering
 
 uint32_t* dst_ip_addr_filter = NULL;
@@ -243,7 +242,7 @@ alc_packet_t* route_parse_from_udp_packet(lls_sls_alc_session_t *matching_lls_sl
         if(!retval) {
             atsc3_global_statistics->packet_counter_alc_packets_parsed++;
 
-            #if !_MULTI_THREAD
+            #if _PATCH_2_WORK
             {
                 lls_sls_alc_monitor_t* lls_sls_alc_monitor = lls_sls_alc_monitor_create();
                 lls_sls_alc_monitor->lls_alc_session = matching_lls_slt_alc_session;
@@ -555,15 +554,16 @@ int main(int argc,char **argv) {
 
 	pthread_t global_slt_thread_id;
 	pthread_create(&global_slt_thread_id, NULL, print_lls_instance_table_thread, (void*)lls_slt_monitor);
-  #endif
+
 	
 	pthread_t global_pcap_thread_id;
     int pcap_ret = pthread_create(&global_pcap_thread_id, NULL, pcap_loop_run_thread, (void*)dev);
 	assert(!pcap_ret);
     
 	pthread_join(global_pcap_thread_id, NULL);
-  #if _MULTI_THREAD	
 	pthread_join(global_ncurses_input_thread_id, NULL);
+  #else
+    pcap_loop_run_thread(dev);
   #endif
 #else
     pcap_loop_run_thread(dev);
