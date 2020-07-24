@@ -200,7 +200,7 @@ atsc3_mime_multipart_related_instance_t* atsc3_mime_multipart_related_parser(FIL
 			has_completed_header = true;
 		}
 
-        //skip ";"
+        //skip ';' ';' and space character
         if (*trim_line_buffer == '"' || *trim_line_buffer == ';' || *trim_line_buffer == ' ')
         {
             trim_line_buffer++;
