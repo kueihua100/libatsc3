@@ -242,7 +242,7 @@ alc_packet_t* route_parse_from_udp_packet(lls_sls_alc_session_t *matching_lls_sl
         if(!retval) {
             atsc3_global_statistics->packet_counter_alc_packets_parsed++;
 
-            #if _PATCH_2_WORK
+            #if _PATCH_2_WORK_
             {
                 lls_sls_alc_monitor_t* lls_sls_alc_monitor = lls_sls_alc_monitor_create();
                 lls_sls_alc_monitor->lls_alc_session = matching_lls_slt_alc_session;

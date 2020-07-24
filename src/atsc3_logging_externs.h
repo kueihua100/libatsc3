@@ -24,6 +24,7 @@ extern "C" {
 #include <string.h>
 #include <stdio.h>
 
+#define _PATCH_2_WORK_ true
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
 extern int _ATSC3_UTILS_INFO_ENABLED;
