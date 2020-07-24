@@ -396,8 +396,14 @@ void* pcap_loop_run_thread(void* dev_pointer) {
 	bpf_u_int32 maskp;
 	bpf_u_int32 netp;
 
+#if _PLAY_PCAP_FILE
+    __INFO("pcap file: %s", dev);
+    //pcap_lookupnet(dev, &netp, &maskp, errbuf);
+    descr = pcap_open_offline(dev, errbuf);
+#else
 	pcap_lookupnet(dev, &netp, &maskp, errbuf);
     descr = pcap_open_live(dev, MAX_PCAP_LEN, 1, 1, errbuf);
+#endif
 
     if(descr == NULL) {
         printf("pcap_open_live(): %s",errbuf);
@@ -417,48 +423,6 @@ void* pcap_loop_run_thread(void* dev_pointer) {
 
     pcap_loop(descr,-1,process_packet,NULL);
 
-    return 0;
-}
-
-void* pcap_loop_run_thread_with_file(void* file_pointer) {
-	char* filename = (char*) file_pointer;
-
-	char errbuf[PCAP_ERRBUF_SIZE];
-	pcap_t* descr;
-	struct bpf_program fp;
-	bpf_u_int32 maskp;
-	bpf_u_int32 netp;
-	int time = 0;
-
-    //use do-while loop to repeat play pcap file
-	do {
-        __INFO("pcap file: %s", filename);
-    	//pcap_lookupnet(dev, &netp, &maskp, errbuf);
-        descr = pcap_open_offline(filename, errbuf);
-
-        if(descr == NULL) {
-            printf("pcap_open_live(): %s",errbuf);
-            exit(1);
-        }
-
-        char filter[] = "udp";
-        if(pcap_compile(descr,&fp, filter,0,netp) == -1) {
-            fprintf(stderr,"Error calling pcap_compile");
-            exit(1);
-        }
-
-        if(pcap_setfilter(descr,&fp) == -1) {
-            fprintf(stderr,"Error setting filter");
-            exit(1);
-        }
-
-        int ii = pcap_loop(descr,-1,process_packet,NULL);
-        __INFO("pcap_loop(%d) retrun: %d", time);
-        pcap_close(descr);
-        descr = NULL;
-        time++;
-    }while (0);
-    
     return 0;
 }
 
@@ -594,24 +558,15 @@ int main(int argc,char **argv) {
   #endif
 	
 	pthread_t global_pcap_thread_id;
-#if _PLAY_PCAP_FILE
-    int pcap_ret = pthread_create(&global_pcap_thread_id, NULL, pcap_loop_run_thread_with_file, (void*)dev);
-#else	
     int pcap_ret = pthread_create(&global_pcap_thread_id, NULL, pcap_loop_run_thread, (void*)dev);
-#endif
 	assert(!pcap_ret);
-
     
 	pthread_join(global_pcap_thread_id, NULL);
   #if _MULTI_THREAD	
 	pthread_join(global_ncurses_input_thread_id, NULL);
   #endif
 #else
-#if _PLAY_PCAP_FILE
-      pcap_loop_run_thread_with_file(dev);
-#else
-      pcap_loop_run_thread(dev);        
-#endif
+    pcap_loop_run_thread(dev);
 #endif
 
 
