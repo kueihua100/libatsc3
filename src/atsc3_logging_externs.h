@@ -25,6 +25,11 @@ extern "C" {
 #include <stdio.h>
 
 #define _PATCH_2_WORK_ true
+#define LLS_DUMP    (0x1)
+#define SLS_DUMP    (0x2)
+#define MEDIA_DUMP  (0x4)
+#define DUMP_ENABLE (LLS_DUMP | SLS_DUMP)
+
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
 extern int _ATSC3_UTILS_INFO_ENABLED;

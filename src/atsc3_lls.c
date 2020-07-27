@@ -52,6 +52,8 @@
 int _LLS_INFO_ENABLED  = 1;
 int _LLS_DEBUG_ENABLED = 1;
 int _LLS_TRACE_ENABLED = 1;
+
+#if (DUMP_ENABLE & LLS_DUMP)
 int _LLS_DUMP_ENABLED  = 1;
 
 FILE* __DUMP_LLS_FILE = NULL;
@@ -78,7 +80,7 @@ int dump_lls(const char *format, ...)  {
 #define _LLS_DUMPLN(...) dump_lls(__VA_ARGS__);dump_lls("%s%s","\r","\n")
 #define _LLS_DUMPT(...)  if(_LLS_DUMP_ENABLED) { dump_lls("%s:%d:[%.4f]: ",__FILE__,__LINE__, gt());_LLS_DUMPLN(__VA_ARGS__); }
 #define _LLS_DUMPN(...)  if(_LLS_DUMP_ENABLED) { _LLS_DUMPLN(__VA_ARGS__); }
-
+#endif //DUMP_ENABLE
 
 char* LLS_SERVICE_CATEGORY_VALUES[] = {"atsc reserved", "linear av", "linear audio", "app based svc.", "esg service", "eas service", "certificateData", "atsc other" };
 //jjustman-2020-03-10: note: 0xFE=>"SignedMultiTable", 0xFF=>"UserDefined"
@@ -475,10 +477,12 @@ lls_table_t* atsc3_lls_table_parse_raw_xml(atsc3_lls_table_t* lls_table) {
 	//create the xml document payload
 	_LLS_DEBUGN("lls_create_table, raw xml payload is: \n%s", lls_table->raw_xml.xml_payload);
 
+#if (DUMP_ENABLE & LLS_DUMP)
 	//dump lls xml payload to lls.dump
 	_LLS_DUMPT("dump lls_table, raw xml payload size is: %d\n", lls_table->raw_xml.xml_payload_size);
 	_LLS_DUMPN("%s", lls_table->raw_xml.xml_payload);
 	_LLS_DUMPN("=======================================================\n");
+#endif //DUMP_ENABLE
 
 	lls_table->xml_document = xml_payload_document_parse(lls_table->raw_xml.xml_payload, lls_table->raw_xml.xml_payload_size);
 
