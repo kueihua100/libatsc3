@@ -45,13 +45,13 @@ Content-Location: usbd.xml
 #define ATSC3_MIME_MULTIPART_RELATED_HEADER_CONTENT_LOCATION "Content-Location:"
 #define ATSC3_MIME_MULTIPART_RELATED_HEADER_MULTIPART_RELATED "multipart/related;"
 #if _PATCH_2_WORK_
-#define ATSC3_MIME_VERSION "MIME-Version: 1.0"
 
 atsc3_mime_multipart_related_instance_t* atsc3_mime_multipart_related_parser(FILE* fp) {
 	if(!fp) {
 		__MIME_PARSER_ERROR("atsc3_mime_multipart_related_parser: fp is null!");
 		return NULL;
 	}
+	//FILE* pF = fopen("0-458760", "r");
 
 	atsc3_mime_multipart_related_instance_t* atsc3_mime_multipart_related_instance = calloc(1, sizeof(atsc3_mime_multipart_related_instance_t));
 
@@ -71,10 +71,16 @@ atsc3_mime_multipart_related_instance_t* atsc3_mime_multipart_related_parser(FIL
 		fgets(line_buffer, ATSC3_MIME_MULTIPART_RELATED_LINE_BUFFER, fp);
 		line_count++;
 
-		//skip "MINE-Version"
-		token_len = __MIN(strlen(ATSC3_MIME_VERSION), strlen(line_buffer));
-		if (strncasecmp(ATSC3_MIME_VERSION, line_buffer, token_len) == 0)
+		//due to libatsc3's mbms is started with: Content-Type: multipart/related ...
+		//but in fact it maybe start with: MIME-Version: 1.0
+		//modify code to check: skip lines if not found below key words:
+		// "Content-Type:", multipart/related;
+		if ((!has_read_content_type) &&
+		    (NULL == strcasestr(line_buffer, ATSC3_MIME_MULTIPART_RELATED_HEADER_CONTENT_TYPE)) &&
+		    (NULL == strcasestr(line_buffer, ATSC3_MIME_MULTIPART_RELATED_HEADER_MULTIPART_RELATED)))
+		{
 		    continue;
+		}
 
 		if(!has_read_content_type) {
 			token_len = __MIN(strlen(ATSC3_MIME_MULTIPART_RELATED_HEADER_CONTENT_TYPE), strlen(line_buffer));
@@ -207,8 +213,16 @@ atsc3_mime_multipart_related_instance_t* atsc3_mime_multipart_related_parser(FIL
         }
 		//check parsing is done?
 		//[note]"type=" and "boundary=" may change in order
-		if (!has_completed_header && (strlen(trim_line_buffer) > 2))
+		if ((!has_completed_header) &&
+		    (NULL != strcasestr(trim_line_buffer, "boundary=")) ||
+		    (NULL != strcasestr(trim_line_buffer, "type=")))
+		{
 		    goto check_again;
+		}
+		else
+		{
+		    continue;
+		}
 	}
 
 	if(!has_completed_header) {
