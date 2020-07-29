@@ -63,6 +63,12 @@ block_t* alc_get_payload_from_filename(char*);
 void atsc3_alc_persist_route_ext_attributes_per_lls_sls_alc_monitor_essence(alc_packet_t* alc_packet, lls_sls_alc_monitor_t* lls_sls_alc_monitor);
 void atsc3_alc_packet_check_monitor_flow_for_toi_wraparound_discontinuity(alc_packet_t* alc_packet, lls_sls_alc_monitor_t* lls_sls_alc_monitor);
 
+#if (DUMP_ENABLE & MEDIA_DUMP)
+//pack distinct recovering files into one file
+void dump_media_from_recover_file(udp_flow_t* udp_flow, alc_packet_t* alc_packet, lls_sls_alc_monitor_t* lls_sls_alc_monitor);
+void dump_media_from_alc_packet(udp_flow_t* udp_flow, alc_packet_t* alc_packet, lls_sls_alc_monitor_t* lls_sls_alc_monitor);
+#endif
+
 //jjustman-2020-03-11
 //deprecated - used for isobmff de-fragmentation to handoff a standalone media presentation unit from alc media fragment
 void alc_recon_file_buffer_struct_set_tsi_toi(pipe_ffplay_buffer_t* pipe_ffplay_buffer, uint32_t tsi, uint32_t toi_init);

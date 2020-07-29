@@ -717,16 +717,53 @@ int atsc3_alc_packet_persist_to_toi_resource_process_sls_mbms_and_emit_callback(
                         *path_slash_position = '/';
                     }
                 }
-                
+#if (DUMP_ENABLE & MEDIA_DUMP)
+                if (access(new_file_name, F_OK) == -1) //copy if not exist
+                {
+                    //rename(temporary_filename, new_file_name);
+                    //open temporary_filename and new_file_name
+                    FILE* p_tmp_file = fopen(temporary_filename, "r");
+                    FILE* p_new_file = fopen(new_file_name, "w+");
+
+                    //check file ptr
+                    if (NULL == p_tmp_file || NULL == p_new_file) {
+                        __ALC_UTILS_IOTRACE("Error to open temporary_filename or new_file_name: %s to: %s", temporary_filename, new_file_name);
+                    }
+                    
+                    struct stat st;
+                    stat(temporary_filename, &st);
+                    uint8_t* data_payload = (uint8_t*)calloc(st.st_size, sizeof(uint8_t));
+
+                    fread(data_payload, st.st_size, 1, p_tmp_file);
+                    fclose(p_tmp_file);
+
+                    fwrite(data_payload, st.st_size, 1, p_new_file);
+                    fclose(p_new_file);
+                    free(data_payload);
+                    //read temporary_filename data and write to new_file_name
+                    __ALC_UTILS_IOTRACE("tsi: %u, toi: %u, copy from temporary_filename to new_file_name: %s to: %s, is complete: %d", alc_packet->def_lct_hdr->tsi, alc_packet->def_lct_hdr->toi,  temporary_filename, new_file_name, alc_packet->close_object_flag);
+                }
+#else
                 rename(temporary_filename, new_file_name);
                 __ALC_UTILS_IOTRACE("tsi: %u, toi: %u, moving from to temporary_filename: %s to: %s, is complete: %d", alc_packet->def_lct_hdr->tsi, alc_packet->def_lct_hdr->toi,  temporary_filename, new_file_name, alc_packet->close_object_flag);
-
+#endif
                 //emit lls alc context callback
                 if(lls_sls_alc_monitor->atsc3_lls_sls_alc_on_object_close_flag_s_tsid_content_location) {
 					lls_sls_alc_monitor->atsc3_lls_sls_alc_on_object_close_flag_s_tsid_content_location(alc_packet->def_lct_hdr->tsi, alc_packet->def_lct_hdr->toi, s_tsid_content_location);
 
                 }
             }
+#if 0 //(DUMP_ENABLE & MEDIA_DUMP)
+            //rename "ip.port.tsi-toi.recovering" to "ip.port.tsi-toi"
+            if (access(temporary_filename, F_OK) == 0) {
+                char new_file_name_buf[1024] = { 0 };
+                char *ptr_file_name = NULL;
+                ptr_file_name = alc_packet_dump_to_object_get_filename_tsi_toi(udp_flow, alc_packet->def_lct_hdr->tsi, alc_packet->def_lct_hdr->toi);
+                rename(temporary_filename, ptr_file_name);
+                free(ptr_file_name);
+                ptr_file_name = NULL;
+            }
+#endif
         }
 	} else {
 		__ALC_UTILS_IOTRACE("dumping to file step: %s, is complete: %d", temporary_filename, alc_packet->close_object_flag);
@@ -922,6 +959,159 @@ void alc_recon_file_ptr_set_tsi_toi(FILE* file_ptr, uint32_t tsi, uint32_t toi_i
 		}
 	*__ALC_RECON_FILE_PTR_TOI_INIT = toi_init;
 }
+
+#if (DUMP_ENABLE & MEDIA_DUMP)
+#define VIDEO_BIT   (0x1)
+#define AUDIO_BIT   (0x2)
+int INIT_BOX_DONE = 0;
+
+void dump_media_from_recover_file(udp_flow_t* udp_flow, alc_packet_t* alc_packet, lls_sls_alc_monitor_t* lls_sls_alc_monitor)
+{
+    __ALC_UTILS_DEBUG("[%s] %u, %u, %d", __FILE__, alc_packet->def_lct_hdr->tsi, 
+        alc_packet->def_lct_hdr->toi, alc_packet->close_object_flag);
+
+    //check this alc packet is media (video/audio) packet?
+    if ((0 == alc_packet->def_lct_hdr->tsi) || /* signaling packet */
+        (0 == alc_packet->close_object_flag) || /* not last alc packet of video/audio data */
+         0 == ((alc_packet->def_lct_hdr->tsi == lls_sls_alc_monitor->video_tsi) || 
+         (alc_packet->def_lct_hdr->tsi == lls_sls_alc_monitor->audio_tsi)))
+    {
+        __ALC_UTILS_DEBUG("Not media (video/audio) packet!!");
+        return;
+    }
+
+    //check init box is write done?
+    //[note] re-written init box seems ok in playback
+    if ((lls_sls_alc_monitor->video_tsi == alc_packet->def_lct_hdr->tsi) &&
+        (lls_sls_alc_monitor->video_toi_init == alc_packet->def_lct_hdr->toi)) {
+        if (VIDEO_BIT & INIT_BOX_DONE) {
+            __ALC_UTILS_DEBUG("Video init box (packet) has been writen before~");
+            return;
+        } else {
+            INIT_BOX_DONE |= VIDEO_BIT;
+        }
+    }
+
+    if ((lls_sls_alc_monitor->audio_tsi == alc_packet->def_lct_hdr->tsi) &&
+        (lls_sls_alc_monitor->audio_toi_init == alc_packet->def_lct_hdr->toi)) {
+        if (AUDIO_BIT & INIT_BOX_DONE) {
+            __ALC_UTILS_DEBUG("Audio init box (packet) has been writen before~");
+            return;
+        } else {
+            INIT_BOX_DONE |= AUDIO_BIT;
+        }
+    }
+
+    char* in_file_name = alc_packet_dump_to_object_get_temporary_recovering_filename(udp_flow, alc_packet);
+    char out_file_name[256] = {0};
+
+    if (alc_packet->def_lct_hdr->tsi == lls_sls_alc_monitor->video_tsi) {
+        snprintf(out_file_name, 255, "%s%u.mp4", __ALC_DUMP_OUTPUT_PATH__, alc_packet->def_lct_hdr->tsi);
+    } else if (alc_packet->def_lct_hdr->tsi == lls_sls_alc_monitor->audio_tsi) {
+        snprintf(out_file_name, 255, "%s%u.mp4", __ALC_DUMP_OUTPUT_PATH__, alc_packet->def_lct_hdr->tsi);
+    }
+
+    //open output file, with "a" mode
+    FILE* out_file = fopen(out_file_name, "a");
+    if (NULL == out_file) {
+        __ALC_UTILS_ERROR("unable to open output file: %s", out_file_name);
+        return;
+    }
+
+    //write media fragment from alc packet
+    if (access(in_file_name, F_OK) == -1) {
+        __ALC_UTILS_ERROR("unable to open input file: %s", in_file_name);
+        return;
+    }
+
+    struct stat st;
+    stat(in_file_name, &st);
+
+    uint8_t* init_payload = (uint8_t*)calloc(st.st_size, sizeof(uint8_t));
+    FILE* init_file = fopen(in_file_name, "r");
+    if (!init_file || st.st_size == 0) {
+        __ALC_UTILS_ERROR("unable to open init file: %s", in_file_name);
+        return;
+    }
+
+    fread(init_payload, st.st_size, 1, init_file);
+    fclose(init_file);
+
+    fwrite(init_payload, st.st_size, 1, out_file);
+    fclose(out_file);
+    
+cleanup:
+    if (in_file_name) {
+        free(in_file_name);
+        in_file_name = NULL;
+    }
+
+    if (init_payload) {
+        free(init_payload);
+        init_payload = NULL;
+    }
+    
+    return;
+}
+
+void dump_media_from_alc_packet(udp_flow_t* udp_flow, alc_packet_t* alc_packet, lls_sls_alc_monitor_t* lls_sls_alc_monitor)
+{
+    __ALC_UTILS_DEBUG("[%s] %u, %u, %d", __FILE__, alc_packet->def_lct_hdr->tsi, 
+        alc_packet->def_lct_hdr->toi, alc_packet->close_object_flag);
+
+    //check this alc packet is media (video/audio) packet?
+    if ((0 == alc_packet->def_lct_hdr->tsi) || /* signaling packet */
+         0 == ((alc_packet->def_lct_hdr->tsi == lls_sls_alc_monitor->video_tsi) || 
+         (alc_packet->def_lct_hdr->tsi == lls_sls_alc_monitor->audio_tsi)))
+    {
+        __ALC_UTILS_DEBUG("Not media (video/audio) packet!!");
+        return;
+    }
+
+    //check init box is write done?
+    //[note] re-written init box seems ok in playback
+    if ((lls_sls_alc_monitor->video_tsi == alc_packet->def_lct_hdr->tsi) &&
+        (lls_sls_alc_monitor->video_toi_init == alc_packet->def_lct_hdr->toi)) {
+        if (VIDEO_BIT & INIT_BOX_DONE) {
+            __ALC_UTILS_DEBUG("Video init box (packet) has been writen before~");
+            return;
+        } else {
+            INIT_BOX_DONE |= VIDEO_BIT;
+        }
+    }
+
+    if ((lls_sls_alc_monitor->audio_tsi == alc_packet->def_lct_hdr->tsi) &&
+        (lls_sls_alc_monitor->audio_toi_init == alc_packet->def_lct_hdr->toi)) {
+        if (AUDIO_BIT & INIT_BOX_DONE) {
+            __ALC_UTILS_DEBUG("Audio init box (packet) has been writen before~");
+            return;
+        } else {
+            INIT_BOX_DONE |= AUDIO_BIT;
+        }
+    }
+
+    char out_file_name[256] = {0};
+
+    if (alc_packet->def_lct_hdr->tsi == lls_sls_alc_monitor->video_tsi) {
+        snprintf(out_file_name, 255, "%s%u.mp4", __ALC_DUMP_OUTPUT_PATH__, alc_packet->def_lct_hdr->tsi);
+    } else if (alc_packet->def_lct_hdr->tsi == lls_sls_alc_monitor->audio_tsi) {
+        snprintf(out_file_name, 255, "%s%u.mp4", __ALC_DUMP_OUTPUT_PATH__, alc_packet->def_lct_hdr->tsi);
+    }
+
+    //open output file, with "a" mode
+    FILE* out_file = fopen(out_file_name, "a");
+    if (NULL == out_file) {
+        __ALC_UTILS_ERROR("unable to open output file: %s", out_file_name);
+        return;
+    }
+
+    fwrite(alc_packet->alc_payload, alc_packet->alc_len, 1, out_file);
+    fclose(out_file);
+    
+    return;
+}
+
+#endif
 
 void alc_recon_file_ptr_fragment_with_init_box(FILE* output_file_ptr, udp_flow_t* udp_flow, alc_packet_t* alc_packet, uint32_t to_match_toi_init) {
 	int flush_ret = 0;

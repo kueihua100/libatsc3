@@ -28,7 +28,7 @@ extern "C" {
 #define LLS_DUMP    (0x1)
 #define SLS_DUMP    (0x2)
 #define MEDIA_DUMP  (0x4)
-#define DUMP_ENABLE (LLS_DUMP | SLS_DUMP)
+#define DUMP_ENABLE (LLS_DUMP | SLS_DUMP | MEDIA_DUMP)
 
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
