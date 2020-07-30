@@ -454,6 +454,34 @@ int main(int argc,char **argv) {
     _ALC_UTILS_TRACE_ENABLED = 1;
     _ISOBMFFTRACKJOINER_DEBUG_ENABLED = 0;
 
+/////////////////////////////////////////////////
+    //to turn needed debug flags here
+    _LLS_INFO_ENABLED  = 1;
+    _LLS_DEBUG_ENABLED = 1;
+    _LLS_TRACE_ENABLED = 1;
+    _LLS_DUMP_ENABLED  = 1; //dump lls tables to lls.dump
+
+    _LLS_SLT_PARSER_INFO_ENABLED = 1;
+    _LLS_SLT_PARSER_INFO_MMT_ENABLED = 1;
+    _LLS_SLT_PARSER_INFO_ROUTE_ENABLED = 1;
+
+    _LLS_SLT_PARSER_DEBUG_ENABLED = 1;
+    _LLS_SLT_PARSER_TRACE_ENABLED = 1;
+
+    _ALC_RX_DEBUG_ENABLED = 1;
+    _ALC_RX_TRACE_ENABLED = 1;
+    _ALC_RX_TRACE_TAB_ENABLED = 1;
+
+    _LLS_ALC_UTILS_INFO_ENABLED = 1;
+    _LLS_ALC_UTILS_DEBUG_ENABLED = 1;
+    _LLS_ALC_UTILS_TRACE_ENABLED = 1;
+
+    _LLS_MMT_UTILS_INFO_ENABLED = 1;
+    _LLS_MMT_UTILS_DEBUG_ENABLED = 1;
+    _LLS_MMT_UTILS_TRACE_ENABLED = 1;
+
+/////////////////////////////////////////////////
+
     char *dev;
 
     char *filter_dst_ip = NULL;

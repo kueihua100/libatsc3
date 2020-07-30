@@ -49,13 +49,12 @@
 #include "atsc3_aeat_parser.h"
 #include "atsc3_lls_types.h"
 
-int _LLS_INFO_ENABLED  = 1;
-int _LLS_DEBUG_ENABLED = 1;
-int _LLS_TRACE_ENABLED = 1;
+int _LLS_INFO_ENABLED  = 0;
+int _LLS_DEBUG_ENABLED = 0;
+int _LLS_TRACE_ENABLED = 0;
+int _LLS_DUMP_ENABLED  = 0;
 
 #if (DUMP_ENABLE & LLS_DUMP)
-int _LLS_DUMP_ENABLED  = 1;
-
 FILE* __DUMP_LLS_FILE = NULL;
 bool  __DUMP_LLS_AVAILABLE = true;
 

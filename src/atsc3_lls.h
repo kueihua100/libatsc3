@@ -24,7 +24,7 @@ extern "C" {
 extern int _LLS_INFO_ENABLED;
 extern int _LLS_DEBUG_ENABLED;
 extern int _LLS_TRACE_ENABLED;
-
+extern int _LLS_DUMP_ENABLED;
 
 #define LLS_DST_ADDR 3758102332 //0xE0_00_17_3C -> 224_0_23_60
 #define LLS_DST_PORT 4937
