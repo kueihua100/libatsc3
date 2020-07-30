@@ -191,9 +191,9 @@ static lls_table_t* __lls_create_base_table_raw(block_t* lls_packet_block) {
 						   lls_payload->lls_payload_length,
                            block_Remaining_size(signed_multi_table_block));
 
-                freeclean(&lls_payload);
+                freeclean((void**)&lls_payload);
                 atsc3_signed_multi_table_free_atsc3_signed_multi_table_lls_payload(&base_table->signed_multi_table);
-                freeclean(&base_table);
+                freeclean((void**)&base_table);
             }
         }
 
@@ -209,7 +209,7 @@ static lls_table_t* __lls_create_base_table_raw(block_t* lls_packet_block) {
                 _LLS_ERROR("_lls_ceate_base_table_raw: SignedMultiTable: remaining signature length too short! signature_length is: %d, remaining bytes: %d",
                                                   base_table->signed_multi_table.signature_length,
                                                   block_Remaining_size(signed_multi_table_block));
-                freeclean(&base_table);
+                freeclean((void**)&base_table);
                 _LLS_ERROR("returning base_table as: %p", base_table);
             } else {
 
@@ -217,7 +217,7 @@ static lls_table_t* __lls_create_base_table_raw(block_t* lls_packet_block) {
                 base_table->signed_multi_table.raw_signed_multi_table_for_signature = block_Duplicate_from_ptr(signed_multi_table_block_start_lls_payload_count, (signed_multi_table_block_end_before_signature_length_field - signed_multi_table_block_start_lls_payload_count));
                 //this should be our CMS message for verification
                 base_table->signed_multi_table.signature = block_Duplicate_from_position(signed_multi_table_block);
-                _LLS_TRACE("__lls_create_base_table_raw: SignedMultiTable: signature_length is: %d, signature: %s",
+                _LLS_TRACE("__lls_create_base_table_raw: SignedMultiTable: signature_length is: %d, signature: %p",
                            base_table->signed_multi_table.signature_length,
                            base_table->signed_multi_table.signature);
             }
@@ -225,7 +225,7 @@ static lls_table_t* __lls_create_base_table_raw(block_t* lls_packet_block) {
             _LLS_ERROR("_lls_ceate_base_table_raw: SignedMultiTable: error finalizing signedMultiTable, base_table: %p, remaining bytes for signature: %d",
                     base_table,
                     block_Remaining_size(signed_multi_table_block));
-            freeclean(&base_table);
+            freeclean((void**)&base_table);
         }
         _LLS_ERROR("before block_Destroy(signed_multi_table_block) base_table as: %p", base_table);
         block_Destroy(&signed_multi_table_block);
@@ -269,7 +269,7 @@ lls_table_t* lls_create_xml_table(block_t* lls_packet_block) {
 		lls_table->raw_xml.xml_payload_size = ret;
 		return lls_table;
 	}
-    
+
     _LLS_ERROR("lls_create_xml_table - error creating instance of LLS XML table,  lls_table_id: %d, length: %d, lls_group_id: %d, group_count_minus1: %d, lls_table_version: %d",
                lls_table->lls_table_id,
                lls_table->raw_xml.xml_payload_compressed_size,
@@ -301,7 +301,6 @@ lls_table_t* lls_table_create_or_update_from_lls_slt_monitor(lls_slt_monitor_t* 
 	    } else {
             atsc3_lls_table_create_or_update_from_lls_slt_monitor_dispatcher(lls_slt_monitor, lls_table);
 	    }
-
     }
 
 	return lls_table;
@@ -364,7 +363,7 @@ lls_table_t* atsc3_lls_table_create_or_update_from_lls_slt_monitor_with_metrics_
         } else if(lls_slt_monitor->lls_latest_aeat_table->lls_group_id == lls_table_new->lls_group_id &&
                   lls_slt_monitor->lls_latest_aeat_table->lls_table_version != lls_table_new->lls_table_version) {
             _LLS_INFO("Updating new AEAT table reference: %s", lls_table_new->aeat_table.aeat_xml_fragment_latest);
-            
+
             lls_table_free(&lls_slt_monitor->lls_latest_aeat_table);
             lls_slt_monitor->lls_latest_aeat_table = lls_table_new;
         } else {
@@ -372,7 +371,7 @@ lls_table_t* atsc3_lls_table_create_or_update_from_lls_slt_monitor_with_metrics_
         }
         return NULL; //TODO - fix me - jjustman-2019-09-18
     }
-    
+
     //jjustman-2019-09-18 - TODO: refactor this out from union to *
     if(lls_table_new->lls_table_id == OnscreenMessageNotification) {
         if(!lls_slt_monitor->lls_latest_on_screen_message_notification_table) {
@@ -381,7 +380,7 @@ lls_table_t* atsc3_lls_table_create_or_update_from_lls_slt_monitor_with_metrics_
         } else if(lls_slt_monitor->lls_latest_on_screen_message_notification_table->lls_group_id == lls_table_new->lls_group_id &&
                   lls_slt_monitor->lls_latest_on_screen_message_notification_table->lls_table_version != lls_table_new->lls_table_version) {
             _LLS_INFO("Updating new OnscreenMessageNotification table reference: %s", lls_table_new->on_screen_message_notification.on_screen_message_notification_xml_fragment_latest);
-            
+
             lls_table_free(&lls_slt_monitor->lls_latest_on_screen_message_notification_table);
             lls_slt_monitor->lls_latest_on_screen_message_notification_table = lls_table_new;
         } else {
@@ -390,11 +389,11 @@ lls_table_t* atsc3_lls_table_create_or_update_from_lls_slt_monitor_with_metrics_
         return NULL; //TODO - fix me - jjustman-2019-09-18
 
     }
-   
+
     //unhandled lls_table_id
     if(lls_table_new->lls_table_id != SLT) {
         _LLS_INFO("lls_table_create_or_update_from_lls_slt_monitor_with_metrics, ignoring lls_table_id: %d", lls_table_new->lls_table_id);
-        
+
         lls_table_free(&lls_table_new);
         return NULL;
     }
@@ -538,7 +537,7 @@ void lls_table_free(lls_table_t** lls_table_p) {
         if(lls_table->slt_table.bsid)
 			free(lls_table->slt_table.bsid);
         lls_table->slt_table.bsid = NULL;
-        
+
 
 	} else if(lls_table->lls_table_id == RRT) {
         _LLS_TRACE("free: lls_create_table_type_instance: LLS table RRT not supported yet");
@@ -751,10 +750,110 @@ int build_aeat_table(lls_table_t* lls_table, xml_node_t* xml_root) {
 
 int build_onscreen_message_notification_table(lls_table_t* lls_table, xml_node_t* xml_root) {
     int ret = 0;
-    _LLS_WARN("build_onscreen_message_notification_table: NOT IMPLEMENTED");
+    //_LLS_WARN("build_onscreen_message_notification_table: NOT IMPLEMENTED");
+
+    if(lls_table->on_screen_message_notification.on_screen_message_notification_xml_fragment_latest) {
+        free(lls_table->on_screen_message_notification.on_screen_message_notification_xml_fragment_latest);
+    }
+    lls_table->on_screen_message_notification.on_screen_message_notification_xml_fragment_latest = calloc(lls_table->raw_xml.xml_payload_size+1, sizeof(char));
+    memcpy(lls_table->on_screen_message_notification.on_screen_message_notification_xml_fragment_latest, lls_table->raw_xml.xml_payload, lls_table->raw_xml.xml_payload_size);
+
+    xml_string_t* root_node_name = xml_node_name(xml_root); //root
+    dump_xml_string(root_node_name);
+
+    int KeepScreenClear_size = xml_node_children(xml_root);
+    _LLS_INFO("build_onscreen_message_notification_table: KeepScreenClear_size: %u", KeepScreenClear_size);
+
+    //build our service rows
+    for(int i=0; i < KeepScreenClear_size; i++) {
+        //atsc3_lls_slt_service_t* atsc3_lls_slt_service = atsc3_lls_slt_service_new();
+
+        xml_node_t* KeepScreenClear_row_node = xml_node_child(xml_root, i);
+        xml_string_t* KeepScreenClear_row_node_xml_string = xml_node_name(KeepScreenClear_row_node);
+
+        if(xml_string_equals_ignore_case(KeepScreenClear_row_node_xml_string, "KeepScreenClear")) {
+            dump_xml_string(KeepScreenClear_row_node_xml_string);
+
+            //KeepScreenClear_row_node_xml_string
+            uint8_t* child_row_node_attributes_s = xml_attributes_clone(KeepScreenClear_row_node_xml_string);
+            kvp_collection_t* KeepScreenClear_attributes_collecton = kvp_collection_parse(child_row_node_attributes_s);
+
+            char* bsid_char = NULL;
+            char* version_char = NULL;
+
+            bsid_char = kvp_collection_get(KeepScreenClear_attributes_collecton, "bsid");
+            version_char = kvp_collection_get(KeepScreenClear_attributes_collecton, "version");
+
+            if(!bsid_char || !version_char) {
+                _LLS_ERROR("build_onscreen_message_notification_table, required elements missing: bsid: %p, version: %p", bsid_char, version_char);
+                ret = -1;
+
+                if(KeepScreenClear_attributes_collecton) {
+                    kvp_collection_free(KeepScreenClear_attributes_collecton);
+                }
+
+                if(child_row_node_attributes_s) {
+                    free(child_row_node_attributes_s);
+                }
+                return ret;
+            }
+
+            if(bsid_char) {
+                int bsid_i;
+                bsid_i = atoi(bsid_char);
+                freesafe(bsid_char);
+
+                _LLS_INFO("build_onscreen_message_notification_table: KeepScreenClear(%u): bsid = %d", i, bsid_i);
+            }
+
+            if(version_char) {
+                int version_i;
+                version_i = atoi(version_char);
+                freesafe(version_char);
+
+                _LLS_INFO("build_onscreen_message_notification_table: KeepScreenClear(%u): version = %d", i, version_i);
+            }
+
+
+            char* serviceId_char = NULL;
+            char* serviceIdRange_char = NULL;
+            char* notificationDuration_char = NULL;
+            char* kscFlag_char = NULL;
+
+            serviceId_char = kvp_collection_get(KeepScreenClear_attributes_collecton, "serviceId");
+            serviceIdRange_char = kvp_collection_get(KeepScreenClear_attributes_collecton, "serviceIdRange");
+            notificationDuration_char = kvp_collection_get(KeepScreenClear_attributes_collecton, "notificationDuration");
+            kscFlag_char = kvp_collection_get(KeepScreenClear_attributes_collecton, "kscFlag");
+
+            if (serviceId_char) {
+                _LLS_INFO("build_onscreen_message_notification_table: KeepScreenClear(%u): serviceId = %s", i, serviceId_char);
+                freesafe(serviceId_char);
+            }
+            if (serviceIdRange_char) {
+                _LLS_INFO("build_onscreen_message_notification_table: KeepScreenClear(%u): serviceIdRange = %s", i, serviceIdRange_char);
+                freesafe(serviceIdRange_char);
+            }
+            if (notificationDuration_char) {
+                _LLS_INFO("build_onscreen_message_notification_table: KeepScreenClear(%u): notificationDuration = %s", i, notificationDuration_char);
+                freesafe(notificationDuration_char);
+            }
+            if (kscFlag_char) {
+                _LLS_INFO("build_onscreen_message_notification_table: KeepScreenClear(%u): kscFlag = %s", i, kscFlag_char);
+                freesafe(kscFlag_char);
+            }
+
+            //cleanup
+            if(KeepScreenClear_attributes_collecton) {
+                kvp_collection_free(KeepScreenClear_attributes_collecton);
+            }
+            if(child_row_node_attributes_s) {
+                free(child_row_node_attributes_s);
+            }
+        }
+    }
+
     return ret;
 }
-
 
 void lls_dump_instance_table(lls_table_t* base_table) {
 	_LLS_TRACE("dump_instance_table: base_table address: %p", base_table);
@@ -833,5 +932,4 @@ void lls_dump_instance_table(lls_table_t* base_table) {
 	_LLS_DEBUGN("");
 
 }
-
 

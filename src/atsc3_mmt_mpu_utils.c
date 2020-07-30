@@ -380,7 +380,8 @@ void mmtp_mpu_dump_header(mmtp_mpu_packet_t* mmtp_mpu_packet) {
 	if(mmtp_mpu_packet->mpu_timed_flag) {
 		__MMT_MPU_DEBUG("mmt_mpu_packet (timed), packet: %p", mmtp_mpu_packet);
 		__MMT_MPU_DEBUG("-----------------");
-		__MMT_MPU_DEBUG(" mpu_fragmentation_indicator: %d", mmtp_mpu_packet->mpu_fragment_type);
+		__MMT_MPU_DEBUG(" mpu_fragment_type: %d", mmtp_mpu_packet->mpu_fragment_type);
+		__MMT_MPU_DEBUG(" mpu_fragmentation_indicator: %d", mmtp_mpu_packet->mpu_fragmentation_indicator);
 		__MMT_MPU_DEBUG(" movie_fragment_seq_num: %u", mmtp_mpu_packet->movie_fragment_sequence_number);
 		__MMT_MPU_DEBUG(" sample_num: %u", mmtp_mpu_packet->sample_number);
 		__MMT_MPU_DEBUG(" offset: %u", mmtp_mpu_packet->offset);
