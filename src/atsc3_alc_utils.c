@@ -578,8 +578,6 @@ int alc_packet_write_fragment(FILE* f, char* file_name, uint32_t offset, alc_pac
 	__ALC_UTILS_IOTRACE("write fragment: tsi: %u, toi: %u, sbn: %x, esi: %x len: %d, complete: %d, file: %p, file name: %s, offset: %u, size: %u",  alc_packet->def_lct_hdr->tsi, alc_packet->def_lct_hdr->toi,
         alc_packet->sbn, alc_packet->esi, alc_packet->alc_len, alc_packet->close_object_flag,
         f, file_name, offset, alc_packet->alc_len);
-    printf("[kueihua][%s:%d] alc_len=%d, transfer_len=%d\n",
-        __FILE__, __LINE__, alc_packet->alc_len, alc_packet->transfer_len);
 
     fseek(f, offset, SEEK_SET);
     int blocks_written = fwrite(alc_packet->alc_payload, alc_packet->alc_len, 1, f);
