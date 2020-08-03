@@ -248,20 +248,6 @@ alc_packet_t* route_parse_from_udp_packet(lls_sls_alc_session_t *matching_lls_sl
         int retval = alc_rx_analyze_packet_a331_compliant((char*)block_Get(udp_packet->data), block_Remaining_size(udp_packet->data), &alc_packet);
         if(!retval) {
             atsc3_global_statistics->packet_counter_alc_packets_parsed++;
-
-            #if _PATCH_2_WORK_
-            {
-                if (NULL == lls_slt_monitor->lls_sls_alc_monitor)
-                {
-                    lls_sls_alc_monitor_t* lls_sls_alc_monitor = lls_sls_alc_monitor_create();
-                    lls_sls_alc_monitor->lls_alc_session = matching_lls_slt_alc_session;
-                    lls_sls_alc_monitor->atsc3_lls_slt_service = matching_lls_slt_alc_session->atsc3_lls_slt_service;
-                    lls_sls_alc_monitor->lls_sls_monitor_output_buffer_mode.file_dump_enabled = true;
-                    lls_slt_monitor->lls_sls_alc_monitor = lls_sls_alc_monitor;
-                    goto ret;
-                }
-            }
-            #endif
             
             //don't dump unless this is pointing to our monitor session
             if(lls_slt_monitor->lls_sls_alc_monitor &&  lls_slt_monitor->lls_sls_alc_monitor->lls_alc_session && lls_slt_monitor->lls_sls_alc_monitor->lls_alc_session->service_id == matching_lls_slt_alc_session->service_id) {
@@ -360,6 +346,17 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
 		global_bandwidth_statistics->interval_alc_current_bytes_rx += udp_packet->data->p_size;
 		global_bandwidth_statistics->interval_alc_current_packets_rx++;
 		atsc3_global_statistics->packet_counter_alc_recv++;
+
+#if _PATCH_2_WORK_
+        if (NULL == lls_slt_monitor->lls_sls_alc_monitor)
+        {
+            lls_sls_alc_monitor_t* lls_sls_alc_monitor = lls_sls_alc_monitor_create();
+            lls_sls_alc_monitor->lls_alc_session = matching_lls_slt_alc_session;
+            lls_sls_alc_monitor->atsc3_lls_slt_service = matching_lls_slt_alc_session->atsc3_lls_slt_service;
+            lls_sls_alc_monitor->lls_sls_monitor_output_buffer_mode.file_dump_enabled = true;
+            lls_slt_monitor->lls_sls_alc_monitor = lls_sls_alc_monitor;
+        }
+#endif
 
         alc_packet_t* alc_packet = route_parse_from_udp_packet(matching_lls_slt_alc_session, udp_packet);
         if(alc_packet) {
