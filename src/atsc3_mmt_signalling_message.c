@@ -126,6 +126,13 @@ uint8_t mmt_signalling_message_parse_packet(mmtp_signalling_packet_t* mmtp_signa
 				mmtp_aggregation_msg_length = ntohs(aggregation_msg_length_short);
 			}
 
+#if _PATCH_2_WORK_
+            //before parsing MMTP signaling message_id, needs to shift MSG_length bits
+            mmtp_signalling_packet->si_aggregation_message_length = mmtp_aggregation_msg_length;
+            block_Seek_Relative(udp_packet, 
+                mmtp_signalling_packet->si_additional_length_header? 4 : 2);
+#endif
+
 			//build a msg from buf to buf+mmtp_aggregation_msg_length
 			__MMSM_ERROR("mmt_signalling_message_parse_packet: AGGREGATED SI is UNTESTED!");
 			processed_messages_count += mmt_signalling_message_parse_id_type(mmtp_signalling_packet, udp_packet);
@@ -197,11 +204,37 @@ uint8_t mmt_signalling_message_parse_id_type(mmtp_signalling_packet_t* mmtp_sign
 	 * includes at least one MPI table.
 	 */
 
+#if _PATCH_2_WORK_
+    if (mmt_signalling_message_header->message_id >= MPT_message_start && 
+        mmt_signalling_message_header->message_id <= MPT_message_end) {
+        buf = mpt_message_parse(mmt_signalling_message_header_and_payload, udp_packet);
+        mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type = MPT_message;
+
+    } else if (mmt_signalling_message_header->message_id == MMT_ATSC3_MESSAGE_ID) {
+        buf = mmt_atsc3_message_payload_parse(mmt_signalling_message_header_and_payload, udp_packet);
+        mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type = MMT_ATSC3_MESSAGE_ID;
+
+    } else if (mmt_signalling_message_header->message_id == MMT_SCTE35_Signal_Message) {
+        buf = mmt_scte35_message_payload_parse(mmt_signalling_message_header_and_payload, udp_packet);
+        mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type = MMT_SCTE35_Signal_Message;
+
+    } else {
+        buf = si_message_not_supported(mmt_signalling_message_header_and_payload, udp_packet);
+        mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type
+            = mmt_signalling_message_header->message_id;
+
+        if (mmt_signalling_message_header->message_id >= MPI_message_start && 
+            mmt_signalling_message_header->message_id <= MPI_message_end) {
+            mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type = MPI_message;
+        }
+    }
+
+#else
 	if(mmt_signalling_message_header->message_id == PA_message) {
 		buf = pa_message_parse(mmt_signalling_message_header_and_payload, udp_packet);
 		mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type = PA_message;
 
-	} else if(mmt_signalling_message_header->message_id >= MPI_message_start && mmt_signalling_message_header->message_id < MPI_message_end) {
+	} else if(mmt_signalling_message_header->message_id >= MPI_message_start && mmt_signalling_message_header->message_id <= MPI_message_end) {
 		buf = mpi_message_parse(mmt_signalling_message_header_and_payload, udp_packet);
 		mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type = MPI_message;
 
@@ -278,6 +311,7 @@ uint8_t mmt_signalling_message_parse_id_type(mmtp_signalling_packet_t* mmtp_sign
 	} else {
 		buf = si_message_not_supported(mmt_signalling_message_header_and_payload, udp_packet);
 	}
+#endif //_PATCH_2_WORK_
 
 	return (buf != raw_buf);
 
@@ -542,6 +576,9 @@ uint8_t* mpt_message_parse(mmt_signalling_message_header_and_payload_t* mmt_sign
         }
 	}
 
+#if _PATCH_2_WORK_
+    return buf;
+#endif
 
 cleanup:
 
@@ -694,6 +731,34 @@ void mmt_atsc3_message_payload_dump(mmt_signalling_message_header_and_payload_t*
 
 
 uint8_t* si_message_not_supported(mmt_signalling_message_header_and_payload_t* mmt_signalling_message_header_and_payload, block_t* udp_packet) {
+#if _PATCH_2_WORK_
+    __MMSM_TRACE("signalling information message id not supported: 0x%04x", mmt_signalling_message_header_and_payload->message_header.message_id);
+
+    //[note]
+    // buf ptr didn't move, all bits of that msg is not parsed
+    // needs to move buf ptr: 4 + length for PA/MPI msg
+    // needs to move buf ptr: 2 + length for other msg
+    //[TODO] remove the restrition if msg parsing is supported
+    if ((mmt_signalling_message_header_and_payload->message_header.message_id == PA_message) ||
+        (mmt_signalling_message_header_and_payload->message_header.message_id >= MPI_message_start && 
+         mmt_signalling_message_header_and_payload->message_header.message_id <= MPI_message_end))
+    {
+        uint8_t* buf = block_Get(udp_packet);
+        uint32_t length;
+        buf = extract(buf, (uint8_t*)&length, 4);
+        mmt_signalling_message_header_and_payload->message_header.length = ntohl(length);
+        block_Seek_Relative(udp_packet, 4+length);
+    }
+    else
+    {
+        uint8_t* buf = block_Get(udp_packet);
+        uint16_t length;
+        buf = extract(buf, (uint8_t*)&length, 2);
+        mmt_signalling_message_header_and_payload->message_header.length = ntohl(length);
+        block_Seek_Relative(udp_packet, 2+length);
+    }
+    return block_Get(udp_packet);
+#else
 	if(mmt_signalling_message_header_and_payload->message_header.message_id == 0x0204 || mmt_signalling_message_header_and_payload->message_header.message_id == 0x020A) {
 		//hrmb messages
 		__MMSM_TRACE("signalling information message id not supported: 0x%04x", mmt_signalling_message_header_and_payload->message_header.message_id);
@@ -702,6 +767,7 @@ uint8_t* si_message_not_supported(mmt_signalling_message_header_and_payload_t* m
 		__MMSM_WARN("signalling information message id not supported: 0x%04x", mmt_signalling_message_header_and_payload->message_header.message_id);
 	}
 	return NULL;
+#endif
 }
 
 
