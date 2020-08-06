@@ -108,7 +108,7 @@ uint8_t mmt_signalling_message_parse_packet(mmtp_signalling_packet_t* mmtp_signa
 		__MMSM_ERROR("signalling_message_parse_payload_header: mmtp_payload_type 0x02 != 0x%x", mmtp_signalling_packet->mmtp_payload_type);
 		return processed_messages_count;
 	}
-    
+
 	if(mmtp_signalling_packet->si_aggregation_flag) {
 		uint32_t mmtp_aggregation_msg_length;
 		__MMSM_ERROR("mmt_signalling_message_parse_packet: AGGREGATED SI is UNTESTED!");
@@ -127,7 +127,7 @@ uint8_t mmt_signalling_message_parse_packet(mmtp_signalling_packet_t* mmtp_signa
 			}
 
 #if _PATCH_2_WORK_
-            //before parsing MMTP signaling message_id, needs to shift MSG_length bits
+            //before parsing next MMTP signaling message_id, needs to shift MSG_length bits
             mmtp_signalling_packet->si_aggregation_message_length = mmtp_aggregation_msg_length;
             block_Seek_Relative(udp_packet, 
                 mmtp_signalling_packet->si_additional_length_header? 4 : 2);
@@ -139,6 +139,22 @@ uint8_t mmt_signalling_message_parse_packet(mmtp_signalling_packet_t* mmtp_signa
 			udp_packet_size = udp_packet_size - (buf - udp_raw_buf);
 		}
 	} else if(udp_packet_size) {
+#if _PATCH_2_WORK_
+        //fragmentation indicator
+        //00: Payload contains one or more complete signalling messages.
+        //01: Payload contains the first fragment of a signalling message.
+        //10: Payload contains a fragment of a signalling message that is 
+        //    neither the first nor the last fragment.
+        //11: Payload contains the last fragment of a signalling message.
+
+        if ((mmtp_signalling_packet->si_fragmentation_indiciator == 2) ||
+            (mmtp_signalling_packet->si_fragmentation_indiciator == 3))
+        {
+            __MMSM_ERROR("%s: IS SUPPORTED for f_i = %d cases ??? SKIP !!!", 
+                __FUNCTION__, mmtp_signalling_packet->si_fragmentation_indiciator);
+            return (buf != udp_raw_buf);
+        }
+#endif
 		//parse a single message
 		processed_messages_count = mmt_signalling_message_parse_id_type(mmtp_signalling_packet, udp_packet);
 	}
@@ -219,7 +235,6 @@ uint8_t mmt_signalling_message_parse_id_type(mmtp_signalling_packet_t* mmtp_sign
         mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type = MMT_SCTE35_Signal_Message;
 
     } else {
-        buf = si_message_not_supported(mmt_signalling_message_header_and_payload, udp_packet);
         mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type
             = mmt_signalling_message_header->message_id;
 
@@ -227,7 +242,13 @@ uint8_t mmt_signalling_message_parse_id_type(mmtp_signalling_packet_t* mmtp_sign
             mmt_signalling_message_header->message_id <= MPI_message_end) {
             mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type = MPI_message;
         }
+
+        buf = si_message_not_supported(mmt_signalling_message_header_and_payload, udp_packet);
     }
+    //[note]
+    //above code only shift length bit field: 2 or 4 bytes
+    //but needs to shift the message content length for aggregated case
+    block_Seek_Relative(udp_packet, mmt_signalling_message_header_and_payload->message_header.length);
 
 #else
 	if(mmt_signalling_message_header->message_id == PA_message) {
@@ -732,30 +753,42 @@ void mmt_atsc3_message_payload_dump(mmt_signalling_message_header_and_payload_t*
 
 uint8_t* si_message_not_supported(mmt_signalling_message_header_and_payload_t* mmt_signalling_message_header_and_payload, block_t* udp_packet) {
 #if _PATCH_2_WORK_
-    __MMSM_TRACE("signalling information message id not supported: 0x%04x", mmt_signalling_message_header_and_payload->message_header.message_id);
+    __MMSM_TRACE("signalling information message id not implemented: 0x%04x", 
+        mmt_signalling_message_header_and_payload->message_header.message_id);
 
     //[note]
-    // buf ptr didn't move, all bits of that msg is not parsed
-    // needs to move buf ptr: 4 + length for PA/MPI msg
-    // needs to move buf ptr: 2 + length for other msg
-    //[TODO] remove the restrition if msg parsing is supported
-    if ((mmt_signalling_message_header_and_payload->message_header.message_id == PA_message) ||
-        (mmt_signalling_message_header_and_payload->message_header.message_id >= MPI_message_start && 
-         mmt_signalling_message_header_and_payload->message_header.message_id <= MPI_message_end))
+    // sync with: mpt_message_parse()/mmt_atsc3_message_payload_parse()
+    // move buf ptr: 4 bytes for PA/MPI/ATSC3/SCTE35 msg and ISO_32 (0x7000~0x7FFF)
+    // move buf ptr: 2 bytes for MPT and (0x200~0x20E) and ISO_16 (0x020F~0x6FFF)
+    // message_id isn't defined at: 0x21~0x1FF
+    if ((mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type == PA_message) ||
+        (mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type == MPI_message)||
+        (mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type == MMT_ATSC3_MESSAGE_ID)||
+        (mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type == MMT_SCTE35_Signal_Message)||
+        ((mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type >= 0x7000) &&
+         (mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type <= 0x7FFF)))
     {
         uint8_t* buf = block_Get(udp_packet);
         uint32_t length;
         buf = extract(buf, (uint8_t*)&length, 4);
         mmt_signalling_message_header_and_payload->message_header.length = ntohl(length);
-        block_Seek_Relative(udp_packet, 4+length);
+        block_Seek_Relative(udp_packet, 4);
     }
-    else
+    else if ((mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type == MPT_message) ||
+             ((mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type >= 0x0200) &&
+              (mmt_signalling_message_header_and_payload->message_header.MESSAGE_id_type <= 0x6FFF)))
     {
         uint8_t* buf = block_Get(udp_packet);
         uint16_t length;
         buf = extract(buf, (uint8_t*)&length, 2);
         mmt_signalling_message_header_and_payload->message_header.length = ntohl(length);
-        block_Seek_Relative(udp_packet, 2+length);
+        block_Seek_Relative(udp_packet, 2);
+    }
+    else //reserved id, length field doesn't know
+    {
+        mmt_signalling_message_header_and_payload->message_header.length = 0;
+        __MMSM_TRACE("signalling information message id not defined: 0x%04x", 
+            mmt_signalling_message_header_and_payload->message_header.message_id);
     }
     return block_Get(udp_packet);
 #else
