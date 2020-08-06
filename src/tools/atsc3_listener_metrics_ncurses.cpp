@@ -477,6 +477,9 @@ int main(int argc,char **argv) {
     _LLS_MMT_UTILS_DEBUG_ENABLED = 1;
     _LLS_MMT_UTILS_TRACE_ENABLED = 1;
 
+    _MMT_SIGNALLING_MESSAGE_DEBUG_ENABLED = 1;
+    _MMT_SIGNALLING_MESSAGE_TRACE_ENABLED = 1;
+
 /////////////////////////////////////////////////
 
     char *dev;
