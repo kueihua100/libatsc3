@@ -19,6 +19,35 @@
 int _MMTP_DEBUG_ENABLED = 0;
 int _MMTP_TRACE_ENABLED = 0;
 
+
+#if (DUMP_ENABLE & SLS_MMTP_DUMP)
+int _SLS_MMTP_DUMP_ENABLED = 1;
+FILE* __DUMP_SLS_MMTP_FILE = NULL;
+bool  __DUMP_SLS_MMTP_AVAILABLE = true;
+
+int sls_mmtp_dump(const char *format, ...)  {
+
+  if(__DUMP_SLS_MMTP_AVAILABLE && !__DUMP_SLS_MMTP_FILE) {
+    __DUMP_SLS_MMTP_FILE = fopen("sls_mmtp.dump", "w");
+    if(!__DUMP_SLS_MMTP_FILE) {
+      __DUMP_SLS_MMTP_AVAILABLE = false;
+      __DUMP_SLS_MMTP_FILE = stderr;
+    }
+  }
+
+    va_list argptr;
+	va_start(argptr, format);
+	vfprintf(__DUMP_SLS_MMTP_FILE, format, argptr);
+    va_end(argptr);
+    fflush(__DUMP_SLS_MMTP_FILE);
+	return 0;
+}
+
+#define _SLS_MMTP_DUMPLN(...) sls_mmtp_dump(__VA_ARGS__);sls_mmtp_dump("%s%s","\r","\n")
+#define _SLS_MMTP_DUMPT(...)  if(_SLS_MMTP_DUMP_ENABLED) { sls_mmtp_dump("%s:%d:[%.4f]: ",__FILE__,__LINE__, gt());_SLS_MMTP_DUMPLN(__VA_ARGS__); }
+#define _SLS_MMTP_DUMPN(...)  if(_SLS_MMTP_DUMP_ENABLED) { _SLS_MMTP_DUMPLN(__VA_ARGS__); }
+#endif //DUMP_ENABLE
+
 /*
  * Open items:
  *
@@ -243,4 +272,216 @@ void mmtp_packet_header_dump(mmtp_packet_header_t* mmtp_packet_header) {
 	__MMTP_PARSER_DEBUG(" packet counter         : %-10u (0x%04x)", 	mmtp_packet_header->packet_counter, mmtp_packet_header->packet_counter);
 	__MMTP_PARSER_DEBUG("------------------");
 }
+
+#if (DUMP_ENABLE & SLS_MMTP_DUMP)
+void mmtp_signal_packet_dump(mmtp_signalling_packet_t* mmtp_signalling_packet) {
+	if(mmtp_signalling_packet->mmtp_payload_type != 0x02) {
+		__MMSM_ERROR("signalling_message_dump, payload_type 0x%x != 0x02", mmtp_signalling_packet->mmtp_payload_type);
+		return;
+	}
+
+	//dump mmtp packet header
+	mmtp_signal_packet_header_dump((mmtp_packet_header_t*)mmtp_signalling_packet);
+
+	_SLS_MMTP_DUMPN("Signalling Message");
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+	/**
+	 * dump si payload header fields
+	 * 	uint8_t		si_fragmentation_indiciator; //2 bits,
+		uint8_t		si_additional_length_header; //1 bit
+		uint8_t		si_aggregation_flag; 		 //1 bit
+		uint8_t		si_fragmentation_counter;    //8 bits
+		uint16_t	si_aggregation_message_length;
+	 */
+	_SLS_MMTP_DUMPN(" fragmentation_indiciator   : %d", 	mmtp_signalling_packet->si_fragmentation_indiciator);
+	_SLS_MMTP_DUMPN(" additional_length_header   : %d", 	mmtp_signalling_packet->si_additional_length_header);
+	_SLS_MMTP_DUMPN(" aggregation_flag           : %d",	mmtp_signalling_packet->si_aggregation_flag);
+	_SLS_MMTP_DUMPN(" fragmentation_counter      : %d",	mmtp_signalling_packet->si_fragmentation_counter);
+	_SLS_MMTP_DUMPN(" aggregation_message_length : %hu",	mmtp_signalling_packet->si_aggregation_message_length);
+
+	for(int i=0; i < mmtp_signalling_packet->mmt_signalling_message_header_and_payload_v.count; i++) {
+		mmt_signalling_message_header_and_payload_t* mmt_signalling_message_header_and_payload = mmtp_signalling_packet->mmt_signalling_message_header_and_payload_v.data[i];
+
+		_SLS_MMTP_DUMPN("+++++++++++++++++++++++++++++");
+		_SLS_MMTP_DUMPN(" Message ID: %hu (0x%04x)", 	mmt_signalling_message_header_and_payload->message_header.message_id, mmt_signalling_message_header_and_payload->message_header.message_id);
+		_SLS_MMTP_DUMPN(" Version   : %d", 			mmt_signalling_message_header_and_payload->message_header.version);
+		_SLS_MMTP_DUMPN(" Length    : %u", 			mmt_signalling_message_header_and_payload->message_header.length);
+		_SLS_MMTP_DUMPN("+++++++++++++++++++++++++++++");
+		_SLS_MMTP_DUMPN(" Payload   : %p", 			&mmt_signalling_message_header_and_payload->message_payload);
+		_SLS_MMTP_DUMPN("+++++++++++++++++++++++++++++");
+
+
+		if(mmt_signalling_message_header_and_payload->message_header.message_id == PA_message) {
+			mmtp_signal_pa_dump(mmt_signalling_message_header_and_payload);
+		} else if(mmt_signalling_message_header_and_payload->message_header.message_id >= MPI_message_start && mmt_signalling_message_header_and_payload->message_header.message_id <= MPI_message_end) {
+			mmtp_signal_mpi_dump(mmt_signalling_message_header_and_payload);
+		} else if(mmt_signalling_message_header_and_payload->message_header.message_id >= MPT_message_start && mmt_signalling_message_header_and_payload->message_header.message_id <= MPT_message_end) {
+			mmtp_signal_mpt_dump(mmt_signalling_message_header_and_payload);
+		} else if(mmt_signalling_message_header_and_payload->message_header.message_id == MMT_ATSC3_MESSAGE_ID) {
+			mmtp_signal_atsc3_payload_dump(mmt_signalling_message_header_and_payload);
+		}
+	}
+}
+
+void mmtp_signal_packet_header_dump(mmtp_packet_header_t* mmtp_packet_header) {
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+	_SLS_MMTP_DUMPN("MMTP Packet Header: Signalling Message: ptr: %p", mmtp_packet_header);
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+	_SLS_MMTP_DUMPN(" packet version         : %-10d (0x%d%d)", 	mmtp_packet_header->mmtp_packet_version, ((mmtp_packet_header->mmtp_packet_version >> 1) & 0x1), mmtp_packet_header->mmtp_packet_version & 0x1);
+	_SLS_MMTP_DUMPN(" payload_type           : %-10d (0x%d%d)", 	mmtp_packet_header->mmtp_payload_type, ((mmtp_packet_header->mmtp_payload_type >> 1) & 0x1), mmtp_packet_header->mmtp_payload_type & 0x1);
+	_SLS_MMTP_DUMPN(" packet_id              : %-10hu (0x%04x)", 	mmtp_packet_header->mmtp_packet_id, mmtp_packet_header->mmtp_packet_id);
+	_SLS_MMTP_DUMPN(" timestamp              : %-10u (0x%08x)",	mmtp_packet_header->mmtp_timestamp, mmtp_packet_header->mmtp_timestamp);
+	_SLS_MMTP_DUMPN(" packet_sequence_number : %-10u (0x%08x)", 	mmtp_packet_header->packet_sequence_number,mmtp_packet_header->packet_sequence_number);
+	_SLS_MMTP_DUMPN(" packet counter         : %-10u (0x%04x)", 	mmtp_packet_header->packet_counter, mmtp_packet_header->packet_counter);
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+}
+
+void mmtp_signal_pa_dump(mmt_signalling_message_header_and_payload_t* mmt_signalling_message_header_and_payload) {
+	_SLS_MMTP_DUMPN(" pa_message");
+	_SLS_MMTP_DUMPN("      NOT IMPLEMENT     ");
+	_SLS_MMTP_DUMPN("      NOT IMPLEMENT     ");
+	_SLS_MMTP_DUMPN("      NOT IMPLEMENT     ");
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+
+}
+
+void mmtp_signal_mpi_dump(mmt_signalling_message_header_and_payload_t* mmt_signalling_message_header_and_payload) {
+	_SLS_MMTP_DUMPN(" mpi_message");
+	_SLS_MMTP_DUMPN("      NOT IMPLEMENT     ");
+	_SLS_MMTP_DUMPN("      NOT IMPLEMENT     ");
+	_SLS_MMTP_DUMPN("      NOT IMPLEMENT     ");	
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+
+}
+
+void mmtp_signal_mpt_dump(mmt_signalling_message_header_and_payload_t* mmt_signalling_message_header_and_payload) {
+	_SLS_MMTP_DUMPN(" mpt_message");
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+
+	mp_table_t* mp_table = &mmt_signalling_message_header_and_payload->message_payload.mp_table;
+
+	_SLS_MMTP_DUMPN(" table_id                    : %u", mp_table->table_id);
+	_SLS_MMTP_DUMPN(" version                     : %u", mp_table->version);
+	_SLS_MMTP_DUMPN(" length                      : %u", mp_table->length);
+	_SLS_MMTP_DUMPN(" mp_table_mode               : %u", mp_table->mp_table_mode);
+	_SLS_MMTP_DUMPN(" mmt_package_id.length:      : %u", mp_table->mmt_package_id.mmt_package_id_length);
+	if(mp_table->mmt_package_id.mmt_package_id_length) {
+		_SLS_MMTP_DUMPN(" mmt_package_id.val:       : %s", mp_table->mmt_package_id.mmt_package_id);
+	}
+	_SLS_MMTP_DUMPN(" mp_table_descriptors.length : %u", mp_table->mp_table_descriptors.mp_table_descriptors_length);
+	if(mp_table->mp_table_descriptors.mp_table_descriptors_length) {
+		_SLS_MMTP_DUMPN(" mp_table_descriptors.val    : %s", mp_table->mp_table_descriptors.mp_table_descriptors_byte);
+	}
+	_SLS_MMTP_DUMPN(" number_of_assets            : %u", mp_table->number_of_assets);
+
+	for(int i=0; i < mp_table->number_of_assets; i++) {
+		mp_table_asset_row_t* mp_table_asset_row = &mp_table->mp_table_asset_row[i];
+		_SLS_MMTP_DUMPN(" asset identifier type       : %u", mp_table_asset_row->identifier_mapping.identifier_type);
+		if(mp_table_asset_row->identifier_mapping.identifier_type == 0x00) {
+			_SLS_MMTP_DUMPN(" asset id                    : %s", mp_table_asset_row->identifier_mapping.asset_id.asset_id);
+
+		}
+		_SLS_MMTP_DUMPN(" asset type                  : %s", mp_table_asset_row->asset_type);
+		_SLS_MMTP_DUMPN(" asset_clock_relation_flag   : %u", mp_table_asset_row->asset_clock_relation_flag);
+		_SLS_MMTP_DUMPN(" asset_clock_relation_id     : %u", mp_table_asset_row->asset_clock_relation_id);
+		_SLS_MMTP_DUMPN(" asset_timescale_flag        : %u", mp_table_asset_row->asset_timescale_flag);
+		_SLS_MMTP_DUMPN(" asset_timescale             : %u", mp_table_asset_row->asset_timescale);
+		_SLS_MMTP_DUMPN(" location_count              : %u", mp_table_asset_row->location_count);
+//		for(int j=0; j < mp_table_asset_row->location_count; j++) {
+//
+//		}
+		_SLS_MMTP_DUMPN(" mmt_general_location_info location_type  : %u", mp_table_asset_row->mmt_general_location_info.location_type);
+		_SLS_MMTP_DUMPN(" mmt_general_location_info pkt_id         : %u", mp_table_asset_row->mmt_general_location_info.packet_id);
+		_SLS_MMTP_DUMPN(" mmt_general_location_info ipv4 src addr  : %u", mp_table_asset_row->mmt_general_location_info.ipv4_src_addr);
+		_SLS_MMTP_DUMPN(" mmt_general_location_info ipv4 dest addr : %u", mp_table_asset_row->mmt_general_location_info.ipv4_dst_addr);
+		_SLS_MMTP_DUMPN(" mmt_general_location_info ipv4 dest port : %u", mp_table_asset_row->mmt_general_location_info.dst_port);
+		_SLS_MMTP_DUMPN(" mmt_general_location_info message id     : %u", mp_table_asset_row->mmt_general_location_info.message_id);
+
+		//first entry
+		_SLS_MMTP_DUMPN(" asset_descriptors_length                 : %u", mp_table_asset_row->asset_descriptors_length);
+		if(mp_table_asset_row->asset_descriptors_length) {
+            if(mp_table_asset_row->mmt_signalling_message_mpu_timestamp_descriptor) {
+                for(int i=0; i < mp_table_asset_row->mmt_signalling_message_mpu_timestamp_descriptor->mpu_tuple_n; i++) {
+                    _SLS_MMTP_DUMPN("   mpu_timestamp_descriptor %u, mpu_sequence_number: %u", i, mp_table_asset_row->mmt_signalling_message_mpu_timestamp_descriptor->mpu_tuple[i].mpu_sequence_number);
+                    _SLS_MMTP_DUMPN("   mpu_timestamp_descriptor %u, mpu_presentation_time: %llu", i, mp_table_asset_row->mmt_signalling_message_mpu_timestamp_descriptor->mpu_tuple[i].mpu_presentation_time);
+                }
+            }
+		}
+	}
+
+}
+
+void mmtp_signal_atsc3_payload_dump(mmt_signalling_message_header_and_payload_t* mmt_signalling_message_header_and_payload) {
+
+	mmt_atsc3_message_payload_t* mmt_atsc3_message_payload = &mmt_signalling_message_header_and_payload->message_payload.mmt_atsc3_message_payload;
+
+	_SLS_MMTP_DUMPN("mmt_atsc3_message");
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+	_SLS_MMTP_DUMPN("service_id:                        %u", mmt_atsc3_message_payload->service_id);
+	_SLS_MMTP_DUMPN("atsc3_message_content_type:        %u", mmt_atsc3_message_payload->atsc3_message_content_type);
+	_SLS_MMTP_DUMPN("atsc3_message_content_version:     %u", mmt_atsc3_message_payload->atsc3_message_content_version);
+	_SLS_MMTP_DUMPN("atsc3_message_content_compression: %u", mmt_atsc3_message_payload->atsc3_message_content_compression);
+	_SLS_MMTP_DUMPN("URI_length:                        %u", mmt_atsc3_message_payload->URI_length);
+	_SLS_MMTP_DUMPN("URI_payload:                       %s", mmt_atsc3_message_payload->URI_payload);
+	if(mmt_atsc3_message_payload->atsc3_message_content_compression == 0x02) {
+		_SLS_MMTP_DUMPN("atsc3_message_content_length_compressed:      %u", mmt_atsc3_message_payload->atsc3_message_content_length_compressed);
+	}
+	_SLS_MMTP_DUMPN("atsc3_message_content_length:      %u", mmt_atsc3_message_payload->atsc3_message_content_length);
+	_SLS_MMTP_DUMPN("atsc3_message_content:             \n%s", mmt_atsc3_message_payload->atsc3_message_content);
+
+}
+
+void mmtp_mpu_packet_dump(mmtp_mpu_packet_t* mmtp_mpu_packet) {
+
+	//dump mmtp packet header
+	mmtp_mpu_packet_header_dump((mmtp_packet_header_t*)mmtp_mpu_packet);
+
+	_SLS_MMTP_DUMPN("MPU mode ");
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+	/**
+	 * dump si payload header fields
+	 * 	uint8_t		si_fragmentation_indiciator; //2 bits,
+		uint8_t		si_additional_length_header; //1 bit
+		uint8_t		si_aggregation_flag; 		 //1 bit
+		uint8_t		si_fragmentation_counter;    //8 bits
+		uint16_t	si_aggregation_message_length;
+	 */
+	_SLS_MMTP_DUMPN(" length                       : %hu", mmtp_mpu_packet->data_unit_length);
+	_SLS_MMTP_DUMPN(" mpu_fragment_type            : %d", mmtp_mpu_packet->mpu_fragment_type);
+	_SLS_MMTP_DUMPN(" mpu_timed_flag               : %d", mmtp_mpu_packet->mpu_timed_flag);
+	_SLS_MMTP_DUMPN(" mpu_fragmentation_indicator  : %d", mmtp_mpu_packet->mpu_fragmentation_indicator);
+	_SLS_MMTP_DUMPN(" mpu_aggregation_flag         : %d", mmtp_mpu_packet->mpu_aggregation_flag);
+	_SLS_MMTP_DUMPN(" mpu_fragment_counter         : %d", mmtp_mpu_packet->mpu_fragment_counter);
+	_SLS_MMTP_DUMPN(" mpu_sequence_number          : %d", mmtp_mpu_packet->mpu_sequence_number);
+
+	if (mmtp_mpu_packet->mpu_timed_flag) {
+		_SLS_MMTP_DUMPN("mmt_mpu_packet (timed), packet: %p", mmtp_mpu_packet);
+		_SLS_MMTP_DUMPN("-----------------");
+		_SLS_MMTP_DUMPN(" mpu_fragment_type: %d", mmtp_mpu_packet->mpu_fragment_type);
+		_SLS_MMTP_DUMPN(" mpu_fragmentation_indicator: %d", mmtp_mpu_packet->mpu_fragmentation_indicator);
+		_SLS_MMTP_DUMPN(" movie_fragment_seq_num: %u", mmtp_mpu_packet->movie_fragment_sequence_number);
+		_SLS_MMTP_DUMPN(" sample_num: %u", mmtp_mpu_packet->sample_number);
+		_SLS_MMTP_DUMPN(" offset: %u", mmtp_mpu_packet->offset);
+		_SLS_MMTP_DUMPN(" pri: %d", mmtp_mpu_packet->priority);
+		_SLS_MMTP_DUMPN(" mpu_sequence_number: %u",mmtp_mpu_packet->mpu_sequence_number);
+	}
+
+
+
+}
+
+void mmtp_mpu_packet_header_dump(mmtp_packet_header_t* mmtp_packet_header) {
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+	_SLS_MMTP_DUMPN("MMTP Packet Header: MPU mode: ptr: %p", mmtp_packet_header);
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+	_SLS_MMTP_DUMPN(" packet version         : %-10d (0x%d%d)", 	mmtp_packet_header->mmtp_packet_version, ((mmtp_packet_header->mmtp_packet_version >> 1) & 0x1), mmtp_packet_header->mmtp_packet_version & 0x1);
+	_SLS_MMTP_DUMPN(" payload_type           : %-10d (0x%d%d)", 	mmtp_packet_header->mmtp_payload_type, ((mmtp_packet_header->mmtp_payload_type >> 1) & 0x1), mmtp_packet_header->mmtp_payload_type & 0x1);
+	_SLS_MMTP_DUMPN(" packet_id              : %-10hu (0x%04x)", 	mmtp_packet_header->mmtp_packet_id, mmtp_packet_header->mmtp_packet_id);
+	_SLS_MMTP_DUMPN(" timestamp              : %-10u (0x%08x)",	mmtp_packet_header->mmtp_timestamp, mmtp_packet_header->mmtp_timestamp);
+	_SLS_MMTP_DUMPN(" packet_sequence_number : %-10u (0x%08x)", 	mmtp_packet_header->packet_sequence_number,mmtp_packet_header->packet_sequence_number);
+	_SLS_MMTP_DUMPN(" packet counter         : %-10u (0x%04x)", 	mmtp_packet_header->packet_counter, mmtp_packet_header->packet_counter);
+	_SLS_MMTP_DUMPN("------------------------------------------------------");
+}
+
+#endif //DUMP_ENABLE
 

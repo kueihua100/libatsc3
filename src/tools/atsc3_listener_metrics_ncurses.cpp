@@ -189,6 +189,95 @@ void update_global_mmtp_statistics_from_udp_packet_t(udp_packet_t *udp_packet) {
 
 }
 
+#if _PATCH_2_WORK_
+void mmtp_parse_from_udp_packet(udp_packet_t *udp_packet)
+{
+    global_bandwidth_statistics->interval_mmt_current_bytes_rx += udp_packet->data->p_size;
+
+    mmtp_packet_header_t* mmtp_packet_header = mmtp_packet_header_parse_from_block_t(udp_packet->data);
+
+    if(!mmtp_packet_header) {
+       goto error;
+    }
+
+    //for filtering MMT flows by a specific packet_id
+    if(dst_packet_id_filter && *dst_packet_id_filter != mmtp_packet_header->mmtp_packet_id) {
+       count_packet_as_filtered(udp_packet);
+       goto cleanup;
+    }
+
+    //dump mmtp packet header
+    //mmtp_packet_header_dump(mmtp_packet_header);
+
+    if(mmtp_packet_header->mmtp_payload_type == 0x0) {
+        //mmtp_mpu_packet_t* mmtp_mpu_packet = mmtp_mpu_packet_parse_from_block_t(mmtp_packet_header, udp_packet->data);
+        mmtp_mpu_packet_t* mmtp_mpu_packet = mmtp_mpu_packet_parse_and_free_packet_header_from_block_t(&mmtp_packet_header, udp_packet->data);
+        if(!mmtp_mpu_packet) {
+            goto error;
+        }
+
+        if(mmtp_mpu_packet->mpu_timed_flag == 1) {
+            //dump mpu header 
+            mmtp_mpu_packet_dump(mmtp_mpu_packet);
+
+#if _KUEIHUA_TODO_ 
+            //refer to code from atsc3_phy_mmt_player_bridge.cpp
+            atsc3_mmt_mfu_context->mmtp_flow = mmtp_flow;
+            atsc3_mmt_mfu_context->udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container;
+            atsc3_mmt_mfu_context->lls_slt_monitor = lls_slt_monitor;
+            atsc3_mmt_mfu_context->matching_lls_sls_mmt_session = matching_lls_sls_mmt_session;
+            mmtp_mfu_process_from_payload_with_context(udp_packet, mmtp_mpu_packet, atsc3_mmt_mfu_context);
+#endif
+
+            atsc3_packet_statistics_mmt_stats_populate(udp_packet, mmtp_mpu_packet);
+        } else {
+            //non-timed
+            __ATSC3_WARN("update_global_mmtp_statistics_from_udp_packet_t: non-timed payload: packet_id: %u", mmtp_packet_header->mmtp_packet_id);
+        }
+    } else if(mmtp_packet_header->mmtp_payload_type == 0x2) {
+
+        mmtp_signalling_packet_t* mmtp_signalling_packet = mmtp_signalling_packet_parse_and_free_packet_header_from_block_t(&mmtp_packet_header, udp_packet->data);
+        uint8_t parsed_count = mmt_signalling_message_parse_packet(mmtp_signalling_packet, udp_packet->data);
+        if(parsed_count) {
+            mmtp_signal_packet_dump(mmtp_signalling_packet);
+
+#if _KUEIHUA_TODO_
+        __TRACE("process_packet: calling mmt_signalling_message_process_with_context with udp_packet: %p, mmtp_signalling_packet: %p, atsc3_mmt_mfu_context: %p,",
+                udp_packet,
+                mmtp_signalling_packet,
+                atsc3_mmt_mfu_context);
+        
+        mmt_signalling_message_process_with_context(udp_packet, mmtp_signalling_packet, atsc3_mmt_mfu_context);
+#endif
+        } else {
+            goto error;
+        }
+
+    } else {
+        __ATSC3_WARN("update_global_mmtp_statistics_from_udp_packet_t: unknown payload type of 0x%x", mmtp_packet_header->mmtp_payload_type);
+        goto error;
+    }
+
+    atsc3_global_statistics->packet_counter_mmtp_packets_received++;
+    global_bandwidth_statistics->interval_mmt_current_packets_rx++;
+
+    goto cleanup;
+
+    error:
+    atsc3_global_statistics->packet_counter_mmtp_packets_parsed_error++;
+       __ERROR("update_global_mmtp_statistics_from_udp_packet_t: raw packet ptr is null, parsing failed for flow: %d.%d.%d.%d:(%-10u):%-5u \t ->  %d.%d.%d.%d:(%-10u):%-5u ",
+               __toipandportnonstruct(udp_packet->udp_flow.src_ip_addr, udp_packet->udp_flow.src_port),
+               udp_packet->udp_flow.src_ip_addr,
+               __toipandportnonstruct(udp_packet->udp_flow.dst_ip_addr, udp_packet->udp_flow.dst_port),
+               udp_packet->udp_flow.dst_ip_addr);
+
+    cleanup:
+    ;
+    
+    return;
+}
+#endif
+
 static void route_process_from_alc_packet(udp_flow_t* udp_flow, alc_packet_t **alc_packet) {
     atsc3_alc_packet_persist_to_toi_resource_process_sls_mbms_and_emit_callback(udp_flow,
                                                                                 alc_packet,
@@ -381,8 +470,12 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     if(matching_lls_slt_mmt_session) {
         __TRACE("data len: %d", udp_packet->data_length);
 
+#if _PATCH_2_WORK_
+        //Sync code from atsc3_phy_mmt_player_bridge.cpp::atsc3_phy_mmt_player_bridge_process_packet_phy()
+        mmtp_parse_from_udp_packet(udp_packet);
+#else
         update_global_mmtp_statistics_from_udp_packet_t(udp_packet);
-
+#endif
 	}
 
     //if we get here, we don't know what type of packet it is..
