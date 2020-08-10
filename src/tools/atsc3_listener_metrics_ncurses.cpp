@@ -247,6 +247,15 @@ alc_packet_t* route_parse_from_udp_packet(lls_sls_alc_session_t *matching_lls_sl
         //process ALC streams
         int retval = alc_rx_analyze_packet_a331_compliant((char*)block_Get(udp_packet->data), block_Remaining_size(udp_packet->data), &alc_packet);
         if(!retval) {
+#if _PATCH_2_WORK_
+            //sync code from atsc3_phy_mmt_player_bridge.cpp
+            
+            //check our alc_packet for a wrap-around TOI value, if it is a monitored TSI, and re-patch the MBMS MPD for updated availabilityStartTime and startNumber with last closed TOI values
+            atsc3_alc_packet_check_monitor_flow_for_toi_wraparound_discontinuity(alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
+
+            //keep track of our EXT_FTI and update last_toi as needed for TOI length and manual set of the close_object flag
+            atsc3_alc_persist_route_ext_attributes_per_lls_sls_alc_monitor_essence(alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
+#endif
             atsc3_global_statistics->packet_counter_alc_packets_parsed++;
             
             //don't dump unless this is pointing to our monitor session
