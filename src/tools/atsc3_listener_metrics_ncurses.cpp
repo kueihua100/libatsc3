@@ -115,6 +115,15 @@ uint16_t* dst_packet_id_filter = NULL;
 
 lls_slt_monitor_t* lls_slt_monitor;
 
+#if _PATCH_2_WORK_
+atsc3_mmt_mfu_context_t* atsc3_mmt_mfu_context = NULL;
+
+mmtp_flow_t* mmtp_flow;
+lls_sls_mmt_monitor_t* lls_sls_mmt_monitor = NULL;
+
+lls_sls_alc_monitor_t* lls_sls_alc_monitor = NULL;
+#endif
+
 //make sure to invoke     mmtp_sub_flow_vector_init(&p_sys->mmtp_sub_flow_vector);
 //mmtp_sub_flow_vector_t*                          mmtp_sub_flow_vector;
 udp_flow_latest_mpu_sequence_number_container_t* udp_flow_latest_mpu_sequence_number_container;
@@ -220,12 +229,12 @@ void mmtp_parse_from_udp_packet(udp_packet_t *udp_packet)
             //dump mpu header 
             mmtp_mpu_packet_dump(mmtp_mpu_packet);
 
-#if _KUEIHUA_TODO_ 
-            //refer to code from atsc3_phy_mmt_player_bridge.cpp
-            atsc3_mmt_mfu_context->mmtp_flow = mmtp_flow;
-            atsc3_mmt_mfu_context->udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container;
-            atsc3_mmt_mfu_context->lls_slt_monitor = lls_slt_monitor;
-            atsc3_mmt_mfu_context->matching_lls_sls_mmt_session = matching_lls_sls_mmt_session;
+#if 1 //_KUEIHUA_TODO_ 
+            //[note] below is refer to code from:
+            //atsc3_phy_mmt_player_bridge.cpp::atsc3_phy_mmt_player_bridge_process_packet_phy()
+            //atsc3_mmt_mfu_context->mmtp_flow = mmtp_flow;
+            //atsc3_mmt_mfu_context->udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container;
+            //atsc3_mmt_mfu_context->lls_slt_monitor = lls_slt_monitor;
             mmtp_mfu_process_from_payload_with_context(udp_packet, mmtp_mpu_packet, atsc3_mmt_mfu_context);
 #endif
 
@@ -241,13 +250,55 @@ void mmtp_parse_from_udp_packet(udp_packet_t *udp_packet)
         if(parsed_count) {
             mmtp_signal_packet_dump(mmtp_signalling_packet);
 
-#if _KUEIHUA_TODO_
-        __TRACE("process_packet: calling mmt_signalling_message_process_with_context with udp_packet: %p, mmtp_signalling_packet: %p, atsc3_mmt_mfu_context: %p,",
-                udp_packet,
-                mmtp_signalling_packet,
-                atsc3_mmt_mfu_context);
-        
-        mmt_signalling_message_process_with_context(udp_packet, mmtp_signalling_packet, atsc3_mmt_mfu_context);
+#if 1 //_KUEIHUA_TODO_
+            //[note] below is refer to code from:
+            //atsc3_phy_mmt_player_bridge.cpp::atsc3_phy_mmt_player_bridge_process_packet_phy()
+
+            __TRACE("process_packet: calling mmt_signalling_message_process_with_context with udp_packet: %p, mmtp_signalling_packet: %p, atsc3_mmt_mfu_context: %p,",
+                    udp_packet, mmtp_signalling_packet, atsc3_mmt_mfu_context);
+
+            //looks like call to the callback process functions that been inited at atsc3_mmt_mfu_context:
+            mmt_signalling_message_process_with_context(udp_packet, mmtp_signalling_packet, atsc3_mmt_mfu_context);
+
+            //TODO: jjustman-2019-10-03 - if signalling_packet == MP_table, set atsc3_mmt_mfu_context->mp_table_last;
+            mmtp_asset_flow_t* mmtp_asset_flow = mmtp_flow_find_or_create_from_udp_packet(mmtp_flow, udp_packet);
+            mmtp_asset_t* mmtp_asset = mmtp_asset_flow_find_or_create_asset_from_lls_sls_mmt_session(mmtp_asset_flow, atsc3_mmt_mfu_context->matching_lls_sls_mmt_session);
+            
+            //TODO: FIX ME!!! HACK - jjustman-2019-09-05
+            mmtp_mpu_packet_t* mmtp_mpu_packet = mmtp_mpu_packet_new();
+            mmtp_mpu_packet->mmtp_packet_id = mmtp_signalling_packet->mmtp_packet_id;
+            
+            mmtp_packet_id_packets_container_t* mmtp_packet_id_packets_container = mmtp_asset_find_or_create_packets_container_from_mmt_mpu_packet(mmtp_asset, mmtp_mpu_packet);
+            mmtp_packet_id_packets_container_add_mmtp_signalling_packet(mmtp_packet_id_packets_container, mmtp_signalling_packet);
+            
+            //TODO: FIX ME!!! HACK - jjustman-2019-09-05
+            mmtp_mpu_packet_free(&mmtp_mpu_packet);
+            
+            //update our sls_mmt_session info
+            mmt_signalling_message_update_lls_sls_mmt_session(mmtp_signalling_packet, atsc3_mmt_mfu_context->matching_lls_sls_mmt_session);
+            
+            //TODO - remap this
+            //add in flows              lls_sls_mmt_session_t* lls_sls_mmt_session = lls_slt_mmt_session_find_from_service_id(lls_slt_monitor, lls_sls_mmt_monitor->lls_mmt_session->service_id);
+            
+            if(lls_sls_mmt_monitor && lls_sls_mmt_monitor->lls_mmt_session && atsc3_mmt_mfu_context->matching_lls_sls_mmt_session) {
+                __TRACE("mmt_signalling_information: from atsc3 service_id: %u, patching: seting audio_packet_id/video_packet_id/stpp_packet_id: %u, %u, %u",
+                        atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->atsc3_lls_slt_service->service_id,
+                        atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->audio_packet_id,
+                        atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->video_packet_id,
+                        atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->stpp_packet_id);
+            
+                if(atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->audio_packet_id) {
+                    lls_sls_mmt_monitor->audio_packet_id = atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->audio_packet_id;
+                }
+
+                if(atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->video_packet_id) {
+                    lls_sls_mmt_monitor->video_packet_id = atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->video_packet_id;
+                }
+
+                if(atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->stpp_packet_id) {
+                    lls_sls_mmt_monitor->stpp_packet_id = atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->stpp_packet_id;
+                }
+            }
 #endif
         } else {
             goto error;
@@ -446,9 +497,9 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
 		atsc3_global_statistics->packet_counter_alc_recv++;
 
 #if _PATCH_2_WORK_
-        if (NULL == lls_slt_monitor->lls_sls_alc_monitor)
-        {
-            lls_sls_alc_monitor_t* lls_sls_alc_monitor = lls_sls_alc_monitor_create();
+        if (lls_slt_monitor && (NULL == lls_slt_monitor->lls_sls_alc_monitor))
+        {            
+            lls_sls_alc_monitor = lls_sls_alc_monitor_create();
             lls_sls_alc_monitor->lls_alc_session = matching_lls_slt_alc_session;
             lls_sls_alc_monitor->atsc3_lls_slt_service = matching_lls_slt_alc_session->atsc3_lls_slt_service;
             lls_sls_alc_monitor->lls_sls_monitor_output_buffer_mode.file_dump_enabled = true;
@@ -471,6 +522,28 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
         __TRACE("data len: %d", udp_packet->data_length);
 
 #if _PATCH_2_WORK_
+        if (lls_slt_monitor && (NULL == lls_slt_monitor->lls_sls_mmt_monitor))
+        {
+            lls_sls_mmt_monitor = lls_sls_mmt_monitor_create();
+            lls_sls_mmt_monitor->lls_mmt_session = matching_lls_slt_mmt_session;
+            lls_sls_mmt_monitor->atsc3_lls_slt_service = matching_lls_slt_mmt_session->atsc3_lls_slt_service;
+            //lls_sls_mmt_monitor->video_packet_id = matching_lls_slt_mmt_session->video_packet_id;
+            //lls_sls_mmt_monitor->audio_packet_id = matching_lls_slt_mmt_session->audio_packet_id;
+            //lls_sls_mmt_monitor->lls_sls_monitor_output_buffer.has_written_init_box = false;
+            lls_slt_monitor->lls_sls_mmt_monitor = lls_sls_mmt_monitor;
+            lls_slt_monitor_add_lls_sls_mmt_monitor(lls_slt_monitor, lls_sls_mmt_monitor);
+
+            atsc3_mmt_mfu_context = atsc3_mmt_mfu_context_new();
+            atsc3_mmt_mfu_context->matching_lls_sls_mmt_session = matching_lls_slt_mmt_session;
+            atsc3_mmt_mfu_context->lls_slt_monitor = lls_slt_monitor;
+
+            mmtp_flow = mmtp_flow_new();
+            atsc3_mmt_mfu_context->mmtp_flow = mmtp_flow;
+            
+            udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container_t_init();
+            atsc3_mmt_mfu_context->udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container;
+        }
+
         //Sync code from atsc3_phy_mmt_player_bridge.cpp::atsc3_phy_mmt_player_bridge_process_packet_phy()
         mmtp_parse_from_udp_packet(udp_packet);
 #else
