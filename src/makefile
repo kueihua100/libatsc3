@@ -69,6 +69,7 @@ clean:
 	-rm -f a324_tests/a324_dstp_lls_aeat_emission_test	
 	-rm -f tools/atsc3_alc_listener_mde_writer
 	-rm -f tools/atsc3_listener_metrics_ncurses
+	-rm -f tools/atsc3_parser
 	-rm -f tools/atsc3_listener_metrics_ncurses_httpd_isobmff
 	-rm -f tools/atsc3_mmt_mfu_monitor
 	-rm -f tools/atsc3_mmt_listener_to_http_hls_fmp4
@@ -170,7 +171,8 @@ tools: atsc3_listener_metrics_ncurses \
 	atsc3_listener_metrics_ncurses_httpd_isobmff \
 	atsc3_mmt_mfu_monitor \
 	atsc3_alc_listener_mde_writer \
-	atsc3_mmt_listener_to_http_hls_fmp4
+	atsc3_mmt_listener_to_http_hls_fmp4 \
+	atsc3_parser
 
 atsc3_sl_phy: atsc3_sl_tlv_demod_type.o	\
 	test_sl/atsc3_sl_tlv_parser_to_alp_test \
@@ -777,6 +779,27 @@ atsc3_listener_metrics_ncurses: tools/atsc3_listener_metrics_ncurses.cpp \
 		atsc3_logging_externs.o \
 		-I../bento/include/ -lpcap  -lncurses -lpcap -lz -lpthread \
 		-o tools/atsc3_listener_metrics_ncurses
+
+atsc3_parser: tools/atsc3_parser.cpp \
+								atsc3_bandwidth_statistics.c \
+								atsc3_packet_statistics.c \
+								atsc3_output_statistics_ncurses.h \
+								atsc3_output_statistics_ncurses.c \
+								atsc3_mmt_reconstitution_from_media_sample.o \
+								atsc3_logging_externs.o \
+								atsc3_isobmff_tools_gpl.o \
+								libatsc3_bento4_gpl.o
+
+	g++  -D OUTPUT_STATISTICS=NCURSES -g tools/atsc3_parser.cpp \
+		libatsc3_bento4_gpl.o \
+		atsc3_isobmff_tools_gpl.o \
+		atsc3_output_statistics_ncurses.c \
+		atsc3_bandwidth_statistics.c \
+		atsc3_packet_statistics.c \
+		atsc3_mmt_reconstitution_from_media_sample.c \
+		atsc3_logging_externs.o \
+		-I../bento/include/ -lpcap  -lncurses -lpcap -lz -lpthread \
+		-o tools/atsc3_parser
 
 atsc3_listener_metrics_ncurses_httpd_isobmff: tools/atsc3_listener_metrics_ncurses_httpd_isobmff.cpp \
 								atsc3_bandwidth_statistics.c \

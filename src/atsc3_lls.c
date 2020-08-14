@@ -55,31 +55,35 @@ int _LLS_TRACE_ENABLED = 0;
 int _LLS_DUMP_ENABLED  = 0;
 
 #if (DUMP_ENABLE & LLS_DUMP)
-FILE* __DUMP_LLS_FILE = NULL;
-bool  __DUMP_LLS_AVAILABLE = true;
+FILE* lls_fptr = NULL;
+FILE* sls_mmtp_fptr = NULL;
 
-int dump_lls(const char *format, ...)  {
+bool  lls_dump_en = true;
 
-  if(__DUMP_LLS_AVAILABLE && !__DUMP_LLS_FILE) {
-    __DUMP_LLS_FILE = fopen("lls.dump", "w");
-    if(!__DUMP_LLS_FILE) {
-      __DUMP_LLS_AVAILABLE = false;
-      __DUMP_LLS_FILE = stderr;
+int lls_dump(const char *format, ...)
+{
+    if (lls_dump_en && !lls_fptr) {
+        lls_fptr = fopen("lls.dump", "w");
+        if(!lls_fptr) {
+            lls_dump_en = false;
+            lls_fptr = stderr;
+        }
     }
-  }
 
     va_list argptr;
 	va_start(argptr, format);
-	vfprintf(__DUMP_LLS_FILE, format, argptr);
+	vfprintf(lls_fptr, format, argptr);
     va_end(argptr);
-    fflush(__DUMP_LLS_FILE);
+    fflush(lls_fptr);
+    
 	return 0;
 }
 
-#define _LLS_DUMPLN(...) dump_lls(__VA_ARGS__);dump_lls("%s%s","\r","\n")
-#define _LLS_DUMPT(...)  if(_LLS_DUMP_ENABLED) { dump_lls("%s:%d:[%.4f]: ",__FILE__,__LINE__, gt());_LLS_DUMPLN(__VA_ARGS__); }
-#define _LLS_DUMPN(...)  if(_LLS_DUMP_ENABLED) { _LLS_DUMPLN(__VA_ARGS__); }
+#define LLS_DUMPLN(...) lls_dump(__VA_ARGS__);lls_dump("%s%s","\r","\n")
+#define LLS_DUMPT(...)  if(lls_dump_en) { lls_dump("%s:%d:[%.4f]: ",__FILE__,__LINE__, gt()); LLS_DUMPLN(__VA_ARGS__); }
+#define LLS_DUMPN(...)  if(lls_dump_en) { LLS_DUMPLN(__VA_ARGS__); }
 #endif //DUMP_ENABLE
+
 
 char* LLS_SERVICE_CATEGORY_VALUES[] = {"atsc reserved", "linear av", "linear audio", "app based svc.", "esg service", "eas service", "certificateData", "atsc other" };
 //jjustman-2020-03-10: note: 0xFE=>"SignedMultiTable", 0xFF=>"UserDefined"
@@ -338,7 +342,12 @@ lls_table_t* lls_table_create_or_update_from_lls_slt_monitor_with_metrics(lls_sl
 	}
 
     if(lls_table_new->lls_table_id != SignedMultiTable) {
+#if _PATCH_2_WORK_
+        atsc3_lls_table_create_or_update_from_lls_slt_monitor_with_metrics_single_table(lls_slt_monitor, lls_table_new, parsed, parsed_update, parsed_error);
+        return lls_table_new;
+#else
         return atsc3_lls_table_create_or_update_from_lls_slt_monitor_with_metrics_single_table(lls_slt_monitor, lls_table_new, parsed, parsed_update, parsed_error);
+#endif
     } else {
         _LLS_DEBUG("lls_table_create_or_update_from_lls_slt_monitor_with_metrics: iterating over %d entries", lls_table_new->signed_multi_table.atsc3_signed_multi_table_lls_payload_v.count);
         //iterate over our interior tables...
@@ -477,9 +486,9 @@ lls_table_t* atsc3_lls_table_parse_raw_xml(atsc3_lls_table_t* lls_table) {
 
 #if (DUMP_ENABLE & LLS_DUMP)
 	//dump lls xml payload to lls.dump
-	_LLS_DUMPT("dump lls_table, raw xml payload size is: %d\n", lls_table->raw_xml.xml_payload_size);
-	_LLS_DUMPN("%s", lls_table->raw_xml.xml_payload);
-	_LLS_DUMPN("=======================================================\n");
+	LLS_DUMPT("dump lls_table, raw xml payload size is: %d\n", lls_table->raw_xml.xml_payload_size);
+	LLS_DUMPN("%s", lls_table->raw_xml.xml_payload);
+	LLS_DUMPN("=======================================================\n");
 #endif //DUMP_ENABLE
 
 	lls_table->xml_document = xml_payload_document_parse(lls_table->raw_xml.xml_payload, lls_table->raw_xml.xml_payload_size);
