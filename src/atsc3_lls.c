@@ -342,12 +342,7 @@ lls_table_t* lls_table_create_or_update_from_lls_slt_monitor_with_metrics(lls_sl
 	}
 
     if(lls_table_new->lls_table_id != SignedMultiTable) {
-#if _PATCH_2_WORK_
-        atsc3_lls_table_create_or_update_from_lls_slt_monitor_with_metrics_single_table(lls_slt_monitor, lls_table_new, parsed, parsed_update, parsed_error);
-        return lls_table_new;
-#else
         return atsc3_lls_table_create_or_update_from_lls_slt_monitor_with_metrics_single_table(lls_slt_monitor, lls_table_new, parsed, parsed_update, parsed_error);
-#endif
     } else {
         _LLS_DEBUG("lls_table_create_or_update_from_lls_slt_monitor_with_metrics: iterating over %d entries", lls_table_new->signed_multi_table.atsc3_signed_multi_table_lls_payload_v.count);
         //iterate over our interior tables...
