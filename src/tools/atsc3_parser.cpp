@@ -3,60 +3,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netinet/if_ether.h>
-#include <netinet/ip.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
-#include <signal.h>
 #include <sys/ioctl.h>
-#include <ncurses.h>
-#include <limits.h>
 #include <strings.h>
 
-//#include "../bento4/ISOBMFFTrackJoiner.h"
-#include "../atsc3_isobmff_tools.h"
-
-#include "../atsc3_listener_udp.h"
 #include "../atsc3_utils.h"
-
 #include "../atsc3_lls.h"
 #include "../atsc3_lls_alc_utils.h"
 
 #include "../atsc3_lls_slt_parser.h"
-#include "../atsc3_lls_sls_monitor_output_buffer_utils.h"
 
 #include "../atsc3_mmtp_packet_types.h"
 #include "../atsc3_mmtp_parser.h"
-#include "../atsc3_mmtp_ntp32_to_pts.h"
 #include "../atsc3_mmt_mpu_utils.h"
-#include "../atsc3_mmt_reconstitution_from_media_sample.h"
 
 #include "../atsc3_alc_rx.h"
 #include "../atsc3_alc_utils.h"
-
-//#include "../atsc3_bandwidth_statistics.h"
-#include "../atsc3_packet_statistics.h"
-
-//#include "../atsc3_output_statistics_ncurses.h"
 
 #include "../atsc3_logging_externs.h"
 
 
 #define _ENABLE_DEBUG true
 
-//commandline stream filtering
-
-uint32_t* dst_ip_addr_filter = NULL;
-uint16_t* dst_ip_port_filter = NULL;
-uint16_t* dst_packet_id_filter = NULL;
-
-// lls and alc glue for slt, contains lls_table_slt and lls_slt_alc_session
 
 lls_slt_monitor_t* lls_slt_monitor;
+int input_svc_id = -1;
 
 #if _PATCH_2_WORK_
 atsc3_mmt_mfu_context_t* atsc3_mmt_mfu_context = NULL;
@@ -68,6 +41,61 @@ lls_sls_alc_monitor_t* lls_sls_alc_monitor = NULL;
 #endif
 
 udp_flow_latest_mpu_sequence_number_container_t* udp_flow_latest_mpu_sequence_number_container;
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+atsc3_lls_slt_service_t* find_first_lls_slt_service(lls_slt_monitor_t* lls_slt_monitor)
+{
+    lls_slt_service_id_group_id_cache_t* lls_slt_service_id_group_id_cache = NULL;
+    atsc3_lls_slt_service_t* atsc3_lls_slt_service = NULL;
+
+    for(int i=0; i < lls_slt_monitor->lls_slt_service_id_group_id_cache_v.count; i++)
+    {
+        lls_slt_service_id_group_id_cache = lls_slt_monitor->lls_slt_service_id_group_id_cache_v.data[i];
+        for(int j=0; j < lls_slt_service_id_group_id_cache->atsc3_lls_slt_service_cache_v.count; j++)
+        {
+            atsc3_lls_slt_service = lls_slt_service_id_group_id_cache->atsc3_lls_slt_service_cache_v.data[j];
+            return atsc3_lls_slt_service;
+        }
+    }
+    return NULL;
+}
+
+int set_monitor_to_svc_id(lls_slt_monitor_t* lls_slt_monitor, int svc_id)
+{
+    int ret = -1;
+    
+    if ((NULL == lls_slt_monitor) || (svc_id < 0)) {
+        __ERROR("[set_monitor_to_svc_id] Input Args Err!!")
+        return ret;
+    }
+    
+    atsc3_lls_slt_service_t* atsc3_lls_slt_service = lls_slt_monitor_find_lls_slt_service_id_group_id_cache_entry(lls_slt_monitor, svc_id);
+    if ((NULL == atsc3_lls_slt_service) ||(svc_id != atsc3_lls_slt_service->service_id))
+    {
+        __ERROR("[set_monitor_to_svc_id]: cannot find service_id: %d", svc_id);
+        __ERROR("Exit program!!")
+        exit(1);
+    }
+
+    atsc3_slt_broadcast_svc_signalling_t* slt_bcast_svc_signalling = NULL;
+    atsc3_slt_broadcast_svc_signalling_t* slt_bcast_svc_signalling_mmt = NULL;
+    atsc3_slt_broadcast_svc_signalling_t* slt_bcast_svc_signalling_route = NULL;
+
+    for(int i=0; i < atsc3_lls_slt_service->atsc3_slt_broadcast_svc_signalling_v.count; i++)
+    {
+        slt_bcast_svc_signalling = atsc3_lls_slt_service->atsc3_slt_broadcast_svc_signalling_v.data[i];
+
+        if(slt_bcast_svc_signalling->sls_protocol == SLS_PROTOCOL_MMTP) {
+            slt_bcast_svc_signalling_mmt = slt_bcast_svc_signalling;
+        } else if(slt_bcast_svc_signalling->sls_protocol == SLS_PROTOCOL_ROUTE) {
+            slt_bcast_svc_signalling_route = slt_bcast_svc_signalling;
+        }
+    }
+
+
+    return ret;
+}
+
 
 int route_processing(udp_packet_t *udp_packet)
 {
@@ -169,8 +197,7 @@ int mmtp_processing(udp_packet_t *udp_packet)
     //parsing mmtp packet
     mmtp_packet_header = mmtp_packet_header_parse_from_block_t(udp_packet->data);
 
-    if (NULL == mmtp_packet_header)
-    {
+    if (NULL == mmtp_packet_header) {
         __ERROR("mmtp_packet_header is NULL!!");
         return ret;
     }
@@ -208,8 +235,7 @@ int mmtp_processing(udp_packet_t *udp_packet)
     {
         mmtp_signalling_packet_t* mmtp_signalling_packet = mmtp_signalling_packet_parse_and_free_packet_header_from_block_t(&mmtp_packet_header, udp_packet->data);
 
-        if (NULL == mmtp_signalling_packet)
-        {
+        if (NULL == mmtp_signalling_packet) {
             __ERROR("mmtp_signalling_packet is NULL!!");
             goto cleanup;
         }
@@ -315,6 +341,23 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
             if (lls_table->lls_table_id == SLT) {
                 //capture SLT services into alc and mmt session flows
                 lls_slt_table_perform_update(lls_table, lls_slt_monitor);
+
+                //check inpt_svs_id:
+                //if not exist, use the service_id of first lls_slt_service
+                if (input_svc_id < 0) {
+                    atsc3_lls_slt_service_t* slt_svs = find_first_lls_slt_service(lls_slt_monitor);
+
+                    if (slt_svs) {
+                        input_svc_id = slt_svs->service_id;
+                        __INFO("Monitor service id= %d", input_svc_id);
+                    } else {
+                        __ERROR("Err in find_first_lls_slt_service()!!");
+                        goto cleanup;
+                    }
+                }
+
+                //set lls_sls_alc_monitor/lls_sls_alc_monitor to input_svc_id
+                set_monitor_to_svc_id(lls_slt_monitor, input_svc_id);
             }
         }
 
@@ -407,15 +450,20 @@ void dbg_flag_and_data_init()
 int main(int argc,char **argv)
 {
     char *file_name;
-    if(argc == 2) {
+
+    if (argc == 2) {
         file_name = argv[1];
-        __INFO("reading the file: %s", file_name);
+    } else if (argc == 3) {
+        file_name = argv[1];
+        input_svc_id = atoi(argv[2]);
     } else {
         println("----------------------------------------------------");
-        println(" !!! ERROR !!!");
-        println("Please specify a pcap/alp file as input argument!!");
+        println("!!!!! ERROR !!!!!");
+        println("args: file_name (service_id)");
+        println("      file_name: a pcap/alp file");
+        println("      service_id: optional, service id to be monitored");
         println("----------------------------------------------------");
-
+        
         exit(1);
     }
 
