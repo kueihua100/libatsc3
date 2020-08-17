@@ -69,57 +69,157 @@ lls_sls_alc_monitor_t* lls_sls_alc_monitor = NULL;
 
 udp_flow_latest_mpu_sequence_number_container_t* udp_flow_latest_mpu_sequence_number_container;
 
-void mmtp_parse_from_udp_packet(udp_packet_t *udp_packet)
+int route_processing(udp_packet_t *udp_packet)
 {
+    alc_packet_t* alc_packet = NULL;
+    lls_sls_alc_session_t* matching_lls_slt_alc_session = NULL;
+    int ret = -1;
 
-    mmtp_packet_header_t* mmtp_packet_header = mmtp_packet_header_parse_from_block_t(udp_packet->data);
+    matching_lls_slt_alc_session = lls_slt_alc_session_find_from_udp_packet(
+        lls_slt_monitor, udp_packet->udp_flow.src_ip_addr, 
+        udp_packet->udp_flow.dst_ip_addr, udp_packet->udp_flow.dst_port);
 
-    if(!mmtp_packet_header) {
-       goto error;
+    if (NULL == matching_lls_slt_alc_session) {
+        __ERROR("Can't find matched lls_slt_alc_session!!");
+        return ret;
+    }
+    
+    if (lls_slt_monitor && (NULL == lls_slt_monitor->lls_sls_alc_monitor))
+    {
+        lls_sls_alc_monitor = lls_sls_alc_monitor_create();
+        lls_sls_alc_monitor->lls_alc_session = matching_lls_slt_alc_session;
+        lls_sls_alc_monitor->atsc3_lls_slt_service = matching_lls_slt_alc_session->atsc3_lls_slt_service;
+        lls_sls_alc_monitor->lls_sls_monitor_output_buffer_mode.file_dump_enabled = true;
+        lls_slt_monitor->lls_sls_alc_monitor = lls_sls_alc_monitor;
+    }
+   
+    //process ALC streams
+    int retval = alc_rx_analyze_packet_a331_compliant((char*)block_Get(udp_packet->data), block_Remaining_size(udp_packet->data), &alc_packet);
+    if (!retval)
+    {
+        //check our alc_packet for a wrap-around TOI value, if it is a monitored TSI, and re-patch the MBMS MPD for updated availabilityStartTime and startNumber with last closed TOI values
+        atsc3_alc_packet_check_monitor_flow_for_toi_wraparound_discontinuity(alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
+
+        //keep track of our EXT_FTI and update last_toi as needed for TOI length and manual set of the close_object flag
+        atsc3_alc_persist_route_ext_attributes_per_lls_sls_alc_monitor_essence(alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
+
+        //persist to disk, process sls mbms and/or emit ROUTE media_delivery_event complete to the application tier if
+        //the full packet has been recovered (e.g. no missing data units in the forward transmission)
+        atsc3_alc_packet_persist_to_toi_resource_process_sls_mbms_and_emit_callback(
+            &udp_packet->udp_flow, &alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
+    
+#if (DUMP_ENABLE & MEDIA_DUMP)
+        //pack distinct recovering files into one file
+        //dump_media_from_recover_file(udp_flow, *alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
+        //pack media alc packet into one file
+        dump_media_from_alc_packet(&udp_packet->udp_flow, alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
+#endif
+        //free alc packet
+        alc_packet_free(&alc_packet);
+
+        ret = 0;
+    }
+    else
+    {
+        __ERROR("Err in alc_rx_analyze_packet_a331_compliant()!!");
     }
 
-    //for filtering MMT flows by a specific packet_id
-    if(dst_packet_id_filter && *dst_packet_id_filter != mmtp_packet_header->mmtp_packet_id) {
-       goto cleanup;
+    return ret;
+}
+
+int mmtp_processing(udp_packet_t *udp_packet)
+{
+    mmtp_packet_header_t* mmtp_packet_header = NULL;
+    lls_sls_mmt_session_t* matching_lls_slt_mmt_session = NULL;
+    int ret = -1;
+
+    matching_lls_slt_mmt_session = lls_slt_mmt_session_find_from_udp_packet(
+        lls_slt_monitor, udp_packet->udp_flow.src_ip_addr,
+        udp_packet->udp_flow.dst_ip_addr, udp_packet->udp_flow.dst_port);
+
+    if (NULL == matching_lls_slt_mmt_session) {
+        __ERROR("Can't find matched lls_slt_mmt_session!!");
+        return ret;
     }
 
-    //dump mmtp packet header
-    //mmtp_packet_header_dump(mmtp_packet_header);
+    __TRACE("data len: %d", udp_packet->data_length);
 
-    if(mmtp_packet_header->mmtp_payload_type == 0x0) {
+    if (lls_slt_monitor && (NULL == lls_slt_monitor->lls_sls_mmt_monitor))
+    {
+        lls_sls_mmt_monitor = lls_sls_mmt_monitor_create();
+        lls_sls_mmt_monitor->lls_mmt_session = matching_lls_slt_mmt_session;
+        lls_sls_mmt_monitor->atsc3_lls_slt_service = matching_lls_slt_mmt_session->atsc3_lls_slt_service;
+        //lls_sls_mmt_monitor->video_packet_id = matching_lls_slt_mmt_session->video_packet_id;
+        //lls_sls_mmt_monitor->audio_packet_id = matching_lls_slt_mmt_session->audio_packet_id;
+        //lls_sls_mmt_monitor->lls_sls_monitor_output_buffer.has_written_init_box = false;
+        lls_slt_monitor->lls_sls_mmt_monitor = lls_sls_mmt_monitor;
+        lls_slt_monitor_add_lls_sls_mmt_monitor(lls_slt_monitor, lls_sls_mmt_monitor);
+
+        atsc3_mmt_mfu_context = atsc3_mmt_mfu_context_new();
+        atsc3_mmt_mfu_context->matching_lls_sls_mmt_session = matching_lls_slt_mmt_session;
+        atsc3_mmt_mfu_context->lls_slt_monitor = lls_slt_monitor;
+
+        mmtp_flow = mmtp_flow_new();
+        atsc3_mmt_mfu_context->mmtp_flow = mmtp_flow;
+        
+        udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container_t_init();
+        atsc3_mmt_mfu_context->udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container;
+    }
+
+    //parsing mmtp packet
+    mmtp_packet_header = mmtp_packet_header_parse_from_block_t(udp_packet->data);
+
+    if (NULL == mmtp_packet_header)
+    {
+        __ERROR("mmtp_packet_header is NULL!!");
+        return ret;
+    }
+
+    if (mmtp_packet_header->mmtp_payload_type == 0x0)
+    {
         mmtp_mpu_packet_t* mmtp_mpu_packet = mmtp_mpu_packet_parse_and_free_packet_header_from_block_t(&mmtp_packet_header, udp_packet->data);
-        if(!mmtp_mpu_packet) {
-            goto error;
+        if (NULL == mmtp_mpu_packet) {
+            __ERROR("mmtp_mpu_packet is NULL!!");
+            goto cleanup;
         }
 
-        if(mmtp_mpu_packet->mpu_timed_flag == 1) {
+        //dump mmtp packet header
+        //mmtp_packet_header_dump(mmtp_packet_header);
+
+        if (mmtp_mpu_packet->mpu_timed_flag == 1)
+        {
             //dump mpu header 
             mmtp_mpu_packet_dump(mmtp_mpu_packet);
 
-#if 1 //_KUEIHUA_TODO_ 
-            //[note] below is refer to code from:
-            //atsc3_phy_mmt_player_bridge.cpp::atsc3_phy_mmt_player_bridge_process_packet_phy()
-            //atsc3_mmt_mfu_context->mmtp_flow = mmtp_flow;
-            //atsc3_mmt_mfu_context->udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container;
-            //atsc3_mmt_mfu_context->lls_slt_monitor = lls_slt_monitor;
             mmtp_mfu_process_from_payload_with_context(udp_packet, mmtp_mpu_packet, atsc3_mmt_mfu_context);
-#endif
 
             atsc3_packet_statistics_mmt_stats_populate(udp_packet, mmtp_mpu_packet);
-        } else {
-            //non-timed
-            __ATSC3_WARN("update_global_mmtp_statistics_from_udp_packet_t: non-timed payload: packet_id: %u", mmtp_packet_header->mmtp_packet_id);
         }
-    } else if(mmtp_packet_header->mmtp_payload_type == 0x2) {
+        else
+        {
+            //non-timed
+            __WARN("Non-timed payload: packet_id: %u", mmtp_packet_header->mmtp_packet_id);
+        }
 
+        if (mmtp_mpu_packet)
+            mmtp_mpu_packet_free(&mmtp_mpu_packet);
+    }
+    else if (mmtp_packet_header->mmtp_payload_type == 0x2)
+    {
         mmtp_signalling_packet_t* mmtp_signalling_packet = mmtp_signalling_packet_parse_and_free_packet_header_from_block_t(&mmtp_packet_header, udp_packet->data);
-        uint8_t parsed_count = mmt_signalling_message_parse_packet(mmtp_signalling_packet, udp_packet->data);
-        if(parsed_count) {
-            mmtp_signal_packet_dump(mmtp_signalling_packet);
 
-#if 1 //_KUEIHUA_TODO_
-            //[note] below is refer to code from:
-            //atsc3_phy_mmt_player_bridge.cpp::atsc3_phy_mmt_player_bridge_process_packet_phy()
+        if (NULL == mmtp_signalling_packet)
+        {
+            __ERROR("mmtp_signalling_packet is NULL!!");
+            goto cleanup;
+        }
+
+        uint8_t parsed_count = mmt_signalling_message_parse_packet(mmtp_signalling_packet, udp_packet->data);
+
+        if (parsed_count)
+        {
+            //dump signal packet
+            mmtp_signal_packet_dump(mmtp_signalling_packet);
 
             __TRACE("process_packet: calling mmt_signalling_message_process_with_context with udp_packet: %p, mmtp_signalling_packet: %p, atsc3_mmt_mfu_context: %p,",
                     udp_packet, mmtp_signalling_packet, atsc3_mmt_mfu_context);
@@ -147,7 +247,8 @@ void mmtp_parse_from_udp_packet(udp_packet_t *udp_packet)
             //TODO - remap this
             //add in flows              lls_sls_mmt_session_t* lls_sls_mmt_session = lls_slt_mmt_session_find_from_service_id(lls_slt_monitor, lls_sls_mmt_monitor->lls_mmt_session->service_id);
             
-            if(lls_sls_mmt_monitor && lls_sls_mmt_monitor->lls_mmt_session && atsc3_mmt_mfu_context->matching_lls_sls_mmt_session) {
+            if (lls_sls_mmt_monitor && lls_sls_mmt_monitor->lls_mmt_session && atsc3_mmt_mfu_context->matching_lls_sls_mmt_session)
+            {
                 __TRACE("mmt_signalling_information: from atsc3 service_id: %u, patching: seting audio_packet_id/video_packet_id/stpp_packet_id: %u, %u, %u",
                         atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->atsc3_lls_slt_service->service_id,
                         atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->audio_packet_id,
@@ -166,93 +267,29 @@ void mmtp_parse_from_udp_packet(udp_packet_t *udp_packet)
                     lls_sls_mmt_monitor->stpp_packet_id = atsc3_mmt_mfu_context->matching_lls_sls_mmt_session->stpp_packet_id;
                 }
             }
-#endif
-        } else {
-            goto error;
+
+            //update ret
+            ret = 0;
         }
 
-    } else {
-        __ATSC3_WARN("update_global_mmtp_statistics_from_udp_packet_t: unknown payload type of 0x%x", mmtp_packet_header->mmtp_payload_type);
-        goto error;
+        if (mmtp_signalling_packet)
+            mmtp_signalling_packet_free(&mmtp_signalling_packet);
+    }
+    else
+    {
+        __WARN("Unknown mmtp_payload_type: 0x%x", mmtp_packet_header->mmtp_payload_type);
     }
 
-    goto cleanup;
-
-    error:
-       __ERROR("update_global_mmtp_statistics_from_udp_packet_t: raw packet ptr is null, parsing failed for flow: %d.%d.%d.%d:(%-10u):%-5u \t ->  %d.%d.%d.%d:(%-10u):%-5u ",
-               __toipandportnonstruct(udp_packet->udp_flow.src_ip_addr, udp_packet->udp_flow.src_port),
-               udp_packet->udp_flow.src_ip_addr,
-               __toipandportnonstruct(udp_packet->udp_flow.dst_ip_addr, udp_packet->udp_flow.dst_port),
-               udp_packet->udp_flow.dst_ip_addr);
-
-    cleanup:
-    ;
-    
-    return;
-}
-
-static void route_process_from_alc_packet(udp_flow_t* udp_flow, alc_packet_t **alc_packet) {
-    atsc3_alc_packet_persist_to_toi_resource_process_sls_mbms_and_emit_callback(udp_flow,
-                                                                                alc_packet,
-                                                                                lls_slt_monitor->lls_sls_alc_monitor);
-
-#if (DUMP_ENABLE & MEDIA_DUMP)
-    //pack distinct recovering files into one file
-    //dump_media_from_recover_file(udp_flow, *alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
-    //pack media alc packet into one file
-    dump_media_from_alc_packet(udp_flow, *alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
-#endif
-
-}
-
-alc_packet_t* route_parse_from_udp_packet(lls_sls_alc_session_t *matching_lls_slt_alc_session, udp_packet_t *udp_packet) {
-    alc_packet_t* alc_packet = NULL;
-
-    //sanity check
-    if(matching_lls_slt_alc_session->alc_session) {
-        //re-inject our alc session
-
-        //process ALC streams
-        int retval = alc_rx_analyze_packet_a331_compliant((char*)block_Get(udp_packet->data), block_Remaining_size(udp_packet->data), &alc_packet);
-        if(!retval) {
-#if _PATCH_2_WORK_
-            //sync code from atsc3_phy_mmt_player_bridge.cpp
-            
-            //check our alc_packet for a wrap-around TOI value, if it is a monitored TSI, and re-patch the MBMS MPD for updated availabilityStartTime and startNumber with last closed TOI values
-            atsc3_alc_packet_check_monitor_flow_for_toi_wraparound_discontinuity(alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
-
-            //keep track of our EXT_FTI and update last_toi as needed for TOI length and manual set of the close_object flag
-            atsc3_alc_persist_route_ext_attributes_per_lls_sls_alc_monitor_essence(alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
-#endif
-            
-            //don't dump unless this is pointing to our monitor session
-            if(lls_slt_monitor->lls_sls_alc_monitor &&  lls_slt_monitor->lls_sls_alc_monitor->lls_alc_session && lls_slt_monitor->lls_sls_alc_monitor->lls_alc_session->service_id == matching_lls_slt_alc_session->service_id) {
-                goto ret;
-            } else {
-                __ATSC3_TRACE("ignoring service_id: %u", matching_lls_slt_alc_session->service_id);
-            }
-            goto cleanup;
-        } else {
-            __ERROR("Error in ALC decode: %d", retval);
-            goto cleanup;
-        }
-    } else {
-        __WARN("Have matching ALC session information but ALC client is not active!");
-        goto cleanup;
-    }
 cleanup:
-    alc_packet_free(&alc_packet);
-    alc_packet = NULL;
+    if (mmtp_packet_header)
+        mmtp_packet_header_free(&mmtp_packet_header);
 
-ret:
-    return alc_packet;
-    
+    return ret;
 }
+
 
 void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet)
 {
-    //alc_packet_t* alc_packet = NULL;
-    lls_sls_alc_session_t* matching_lls_slt_alc_session = NULL;
     //mmtp_packet_header_t* mmtp_packet_header = NULL;
     lls_sls_mmt_session_t* matching_lls_slt_mmt_session = NULL;
 
@@ -284,71 +321,15 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
         goto cleanup;
     }
 
-    if((dst_ip_addr_filter && udp_packet->udp_flow.dst_ip_addr != *dst_ip_addr_filter)) {
-        return udp_packet_free(&udp_packet);
-    }
+    //ROUTE (ALC) prcessing
+    route_processing(udp_packet);
 
-    //ALC (ROUTE) - If this flow is registered from the SLT, process it as ALC, otherwise run the flow thru MMT
-    matching_lls_slt_alc_session = lls_slt_alc_session_find_from_udp_packet(lls_slt_monitor, udp_packet->udp_flow.src_ip_addr, udp_packet->udp_flow.dst_ip_addr, udp_packet->udp_flow.dst_port);
-    if(matching_lls_slt_alc_session) {
-
-#if _PATCH_2_WORK_
-        if (lls_slt_monitor && (NULL == lls_slt_monitor->lls_sls_alc_monitor))
-        {            
-            lls_sls_alc_monitor = lls_sls_alc_monitor_create();
-            lls_sls_alc_monitor->lls_alc_session = matching_lls_slt_alc_session;
-            lls_sls_alc_monitor->atsc3_lls_slt_service = matching_lls_slt_alc_session->atsc3_lls_slt_service;
-            lls_sls_alc_monitor->lls_sls_monitor_output_buffer_mode.file_dump_enabled = true;
-            lls_slt_monitor->lls_sls_alc_monitor = lls_sls_alc_monitor;
-        }
-#endif
-
-        alc_packet_t* alc_packet = route_parse_from_udp_packet(matching_lls_slt_alc_session, udp_packet);
-        if(alc_packet) {
-            route_process_from_alc_packet(&udp_packet->udp_flow, &alc_packet);
-            alc_packet_free(&alc_packet);
-        }
-        
-        return udp_packet_free(&udp_packet);
-    }
-
-    //find our matching MMT flow and push it to reconsitution
-    matching_lls_slt_mmt_session = lls_slt_mmt_session_find_from_udp_packet(lls_slt_monitor, udp_packet->udp_flow.src_ip_addr, udp_packet->udp_flow.dst_ip_addr, udp_packet->udp_flow.dst_port);
-    if(matching_lls_slt_mmt_session) {
-        __TRACE("data len: %d", udp_packet->data_length);
-
-#if _PATCH_2_WORK_
-        if (lls_slt_monitor && (NULL == lls_slt_monitor->lls_sls_mmt_monitor))
-        {
-            lls_sls_mmt_monitor = lls_sls_mmt_monitor_create();
-            lls_sls_mmt_monitor->lls_mmt_session = matching_lls_slt_mmt_session;
-            lls_sls_mmt_monitor->atsc3_lls_slt_service = matching_lls_slt_mmt_session->atsc3_lls_slt_service;
-            //lls_sls_mmt_monitor->video_packet_id = matching_lls_slt_mmt_session->video_packet_id;
-            //lls_sls_mmt_monitor->audio_packet_id = matching_lls_slt_mmt_session->audio_packet_id;
-            //lls_sls_mmt_monitor->lls_sls_monitor_output_buffer.has_written_init_box = false;
-            lls_slt_monitor->lls_sls_mmt_monitor = lls_sls_mmt_monitor;
-            lls_slt_monitor_add_lls_sls_mmt_monitor(lls_slt_monitor, lls_sls_mmt_monitor);
-
-            atsc3_mmt_mfu_context = atsc3_mmt_mfu_context_new();
-            atsc3_mmt_mfu_context->matching_lls_sls_mmt_session = matching_lls_slt_mmt_session;
-            atsc3_mmt_mfu_context->lls_slt_monitor = lls_slt_monitor;
-
-            mmtp_flow = mmtp_flow_new();
-            atsc3_mmt_mfu_context->mmtp_flow = mmtp_flow;
-            
-            udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container_t_init();
-            atsc3_mmt_mfu_context->udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container;
-        }
-
-        //Sync code from atsc3_phy_mmt_player_bridge.cpp::atsc3_phy_mmt_player_bridge_process_packet_phy()
-        mmtp_parse_from_udp_packet(udp_packet);
-    }
-#endif
-
+    //MMTP processing
+    mmtp_processing(udp_packet);
+    
 cleanup:
-	if (udp_packet) {
+	if (udp_packet)
         udp_packet_free(&udp_packet);
-    }
 
     return;
 }
@@ -385,26 +366,12 @@ void* pcap_loop_run_thread(void* file_name) {
 }
 
 
-int main(int argc,char **argv)
+void dbg_flag_and_data_init()
 {
-    char *file_name;
-    if(argc == 2) {
-        file_name = argv[1];
-        __INFO("reading the file: %s", file_name);
-    } else {
-        println("----------------------------------------------------");
-        println(" !!! ERROR !!!");
-        println("Please specify a pcap/alp file as input argument!!");
-        println("----------------------------------------------------");
-
-        exit(1);
-    }
-
     //to turn needed debug flags here
     _LLS_INFO_ENABLED  = 1;
     _LLS_DEBUG_ENABLED = 1;
     _LLS_TRACE_ENABLED = 1;
-    _LLS_DUMP_ENABLED  = 1; //dump lls tables to lls.dump
 
     _LLS_SLT_PARSER_INFO_ENABLED = 1;
     _LLS_SLT_PARSER_INFO_MMT_ENABLED = 1;
@@ -428,8 +395,32 @@ int main(int argc,char **argv)
     _MMT_SIGNALLING_MESSAGE_DEBUG_ENABLED = 1;
     _MMT_SIGNALLING_MESSAGE_TRACE_ENABLED = 1;
 
+    //enable flag to dump lls/sls table
+    _LLS_DUMP_ENABLED  = 1; //dump lls tables to lls.dump
+
     //global variables initial
     lls_slt_monitor = lls_slt_monitor_create();
+
+    return;
+}
+
+int main(int argc,char **argv)
+{
+    char *file_name;
+    if(argc == 2) {
+        file_name = argv[1];
+        __INFO("reading the file: %s", file_name);
+    } else {
+        println("----------------------------------------------------");
+        println(" !!! ERROR !!!");
+        println("Please specify a pcap/alp file as input argument!!");
+        println("----------------------------------------------------");
+
+        exit(1);
+    }
+
+    //set debug flag and global variables init
+    dbg_flag_and_data_init();
 
     //run pcap thread:
     pthread_t global_pcap_thread_id;
