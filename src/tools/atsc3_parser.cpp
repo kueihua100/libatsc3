@@ -29,18 +29,16 @@
 
 
 lls_slt_monitor_t* lls_slt_monitor;
+lls_sls_alc_monitor_t* lls_sls_alc_monitor = NULL;
+lls_sls_mmt_monitor_t* lls_sls_mmt_monitor = NULL;
+
 int input_svc_id = -1;
 
 #if _PATCH_2_WORK_
 atsc3_mmt_mfu_context_t* atsc3_mmt_mfu_context = NULL;
-
 mmtp_flow_t* mmtp_flow;
-lls_sls_mmt_monitor_t* lls_sls_mmt_monitor = NULL;
-
-lls_sls_alc_monitor_t* lls_sls_alc_monitor = NULL;
-#endif
-
 udp_flow_latest_mpu_sequence_number_container_t* udp_flow_latest_mpu_sequence_number_container;
+#endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 atsc3_lls_slt_service_t* find_first_lls_slt_service(lls_slt_monitor_t* lls_slt_monitor)
@@ -60,48 +58,128 @@ atsc3_lls_slt_service_t* find_first_lls_slt_service(lls_slt_monitor_t* lls_slt_m
     return NULL;
 }
 
-int set_monitor_to_svc_id(lls_slt_monitor_t* lls_slt_monitor, int svc_id)
+int set_sls_monitor_from_svc_id(lls_slt_monitor_t* lls_slt_monitor, int svc_id)
 {
     int ret = -1;
     
     if ((NULL == lls_slt_monitor) || (svc_id < 0)) {
-        __ERROR("[set_monitor_to_svc_id] Input Args Err!!")
+        __ERROR("[%s] Input Args Err!!", __FUNCTION__)
         return ret;
     }
     
     atsc3_lls_slt_service_t* atsc3_lls_slt_service = lls_slt_monitor_find_lls_slt_service_id_group_id_cache_entry(lls_slt_monitor, svc_id);
     if ((NULL == atsc3_lls_slt_service) ||(svc_id != atsc3_lls_slt_service->service_id))
     {
-        __ERROR("[set_monitor_to_svc_id]: cannot find service_id: %d", svc_id);
+        __ERROR("[%s]: cannot find service_id: %d", __FUNCTION__, svc_id);
         __ERROR("Exit program!!")
         exit(1);
     }
 
+    //get BroadcastSvcSignaling from lls_slt_service
     atsc3_slt_broadcast_svc_signalling_t* slt_bcast_svc_signalling = NULL;
-    atsc3_slt_broadcast_svc_signalling_t* slt_bcast_svc_signalling_mmt = NULL;
-    atsc3_slt_broadcast_svc_signalling_t* slt_bcast_svc_signalling_route = NULL;
 
     for(int i=0; i < atsc3_lls_slt_service->atsc3_slt_broadcast_svc_signalling_v.count; i++)
     {
         slt_bcast_svc_signalling = atsc3_lls_slt_service->atsc3_slt_broadcast_svc_signalling_v.data[i];
-
-        if(slt_bcast_svc_signalling->sls_protocol == SLS_PROTOCOL_MMTP) {
-            slt_bcast_svc_signalling_mmt = slt_bcast_svc_signalling;
-        } else if(slt_bcast_svc_signalling->sls_protocol == SLS_PROTOCOL_ROUTE) {
-            slt_bcast_svc_signalling_route = slt_bcast_svc_signalling;
-        }
     }
 
+    //check for ROUTE
+    if (slt_bcast_svc_signalling->sls_protocol == SLS_PROTOCOL_ROUTE)
+    {
+        __INFO("[%s]: service_id: %d - using ROUTE with flow: sip: %s, dip: %s:%s",
+           __FUNCTION__, svc_id, 
+           slt_bcast_svc_signalling->sls_source_ip_address,
+           slt_bcast_svc_signalling->sls_destination_ip_address,
+           slt_bcast_svc_signalling->sls_destination_udp_port);
 
+        //clear previous active lls_sls_alc_monitor, then create for new one
+        lls_slt_monitor_clear_lls_sls_alc_monitor(lls_slt_monitor);
+        lls_sls_alc_monitor = lls_sls_alc_monitor_create();
+        lls_sls_alc_monitor->atsc3_lls_slt_service = atsc3_lls_slt_service;
+        lls_sls_alc_monitor->lls_sls_monitor_output_buffer_mode.file_dump_enabled = true;
+
+        //find alc_session from service_id
+        lls_sls_alc_session_t* lls_sls_alc_session = lls_slt_alc_session_find_from_service_id(lls_slt_monitor, atsc3_lls_slt_service->service_id);
+        if (NULL == lls_sls_alc_session) {
+            __WARN("lls_slt_alc_session_find_from_service_id: lls_sls_alc_session is NULL!");
+        }
+        lls_sls_alc_monitor->lls_alc_session = lls_sls_alc_session;
+        lls_slt_monitor->lls_sls_alc_monitor = lls_sls_alc_monitor;
+        lls_slt_monitor_add_lls_sls_alc_monitor(lls_slt_monitor, lls_sls_alc_monitor);
+
+        //add svc_id to lls_slt_monitor
+        lls_slt_service_id_t* lls_slt_service_id = lls_slt_service_id_new_from_atsc3_lls_slt_service(atsc3_lls_slt_service);
+        lls_slt_monitor_add_lls_slt_service_id(lls_slt_monitor, lls_slt_service_id);
+    }
+    /* else
+    {
+        //no ROUTE, clear lls_sls_alc_monitor
+        lls_slt_monitor_clear_lls_sls_alc_monitor(lls_slt_monitor);
+        
+        if (lls_slt_monitor->lls_sls_alc_monitor) {
+            lls_sls_alc_monitor_free(&lls_slt_monitor->lls_sls_alc_monitor);
+            lls_sls_alc_monitor = NULL;
+        }
+    } */
+
+    //check for MMTP
+    if (slt_bcast_svc_signalling->sls_protocol == SLS_PROTOCOL_MMTP)
+    {
+        __INFO("[%s]: service_id: %d - using MMT with flow: sip: %s, dip: %s:%s",
+           __FUNCTION__, svc_id,
+           slt_bcast_svc_signalling->sls_source_ip_address,
+           slt_bcast_svc_signalling->sls_destination_ip_address,
+           slt_bcast_svc_signalling->sls_destination_udp_port);
+        
+        //clear previous active lls_sls_mmt_monitor, then create for new one
+        lls_slt_monitor_clear_lls_sls_mmt_monitor(lls_slt_monitor);
+        lls_sls_mmt_monitor = lls_sls_mmt_monitor_create();
+        lls_sls_mmt_monitor->atsc3_lls_slt_service = atsc3_lls_slt_service;
+
+        //find mmt_session from service_id
+        lls_sls_mmt_session_t* lls_sls_mmt_session = lls_slt_mmt_session_find_from_service_id(lls_slt_monitor, atsc3_lls_slt_service->service_id);
+
+        if (NULL == lls_sls_mmt_session) {
+            __WARN("lls_slt_mmt_session_find_from_service_id: lls_sls_mmt_session is NULL!");
+        }
+        lls_sls_mmt_monitor->lls_mmt_session = lls_sls_mmt_session;
+        lls_slt_monitor->lls_sls_mmt_monitor = lls_sls_mmt_monitor;
+        lls_slt_monitor_add_lls_sls_mmt_monitor(lls_slt_monitor, lls_sls_mmt_monitor);
+
+        //add svc_id to lls_slt_monitor
+        lls_slt_service_id_t* lls_slt_service_id = lls_slt_service_id_new_from_atsc3_lls_slt_service(atsc3_lls_slt_service);
+        lls_slt_monitor_add_lls_slt_service_id(lls_slt_monitor, lls_slt_service_id);
+
+        //////////////////////////////////////////////////
+        mmtp_flow = mmtp_flow_new();
+        udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container_t_init();
+
+        atsc3_mmt_mfu_context = atsc3_mmt_mfu_context_new();
+        atsc3_mmt_mfu_context->matching_lls_sls_mmt_session = lls_sls_mmt_session;
+        atsc3_mmt_mfu_context->lls_slt_monitor = lls_slt_monitor;
+        atsc3_mmt_mfu_context->mmtp_flow = mmtp_flow;
+        atsc3_mmt_mfu_context->udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container;
+    }
+    /* else
+    {
+        //no MMTP, clear lls_sls_mmt_monitor
+        lls_slt_monitor_clear_lls_sls_mmt_monitor(lls_slt_monitor);
+        
+        if (lls_slt_monitor->lls_sls_mmt_monitor) {
+            lls_sls_mmt_monitor_free(&lls_slt_monitor->lls_sls_mmt_monitor);
+            lls_sls_mmt_monitor = NULL;
+        }
+    } */
+
+    ret = 0;
     return ret;
 }
 
 
 int route_processing(udp_packet_t *udp_packet)
 {
-    alc_packet_t* alc_packet = NULL;
-    lls_sls_alc_session_t* matching_lls_slt_alc_session = NULL;
     int ret = -1;
+    lls_sls_alc_session_t* matching_lls_slt_alc_session = NULL;
 
     matching_lls_slt_alc_session = lls_slt_alc_session_find_from_udp_packet(
         lls_slt_monitor, udp_packet->udp_flow.src_ip_addr, 
@@ -111,17 +189,9 @@ int route_processing(udp_packet_t *udp_packet)
         __ERROR("Can't find matched lls_slt_alc_session!!");
         return ret;
     }
-    
-    if (lls_slt_monitor && (NULL == lls_slt_monitor->lls_sls_alc_monitor))
-    {
-        lls_sls_alc_monitor = lls_sls_alc_monitor_create();
-        lls_sls_alc_monitor->lls_alc_session = matching_lls_slt_alc_session;
-        lls_sls_alc_monitor->atsc3_lls_slt_service = matching_lls_slt_alc_session->atsc3_lls_slt_service;
-        lls_sls_alc_monitor->lls_sls_monitor_output_buffer_mode.file_dump_enabled = true;
-        lls_slt_monitor->lls_sls_alc_monitor = lls_sls_alc_monitor;
-    }
-   
+
     //process ALC streams
+    alc_packet_t* alc_packet = NULL;
     int retval = alc_rx_analyze_packet_a331_compliant((char*)block_Get(udp_packet->data), block_Remaining_size(udp_packet->data), &alc_packet);
     if (!retval)
     {
@@ -157,9 +227,8 @@ int route_processing(udp_packet_t *udp_packet)
 
 int mmtp_processing(udp_packet_t *udp_packet)
 {
-    mmtp_packet_header_t* mmtp_packet_header = NULL;
-    lls_sls_mmt_session_t* matching_lls_slt_mmt_session = NULL;
     int ret = -1;
+    lls_sls_mmt_session_t* matching_lls_slt_mmt_session = NULL;
 
     matching_lls_slt_mmt_session = lls_slt_mmt_session_find_from_udp_packet(
         lls_slt_monitor, udp_packet->udp_flow.src_ip_addr,
@@ -172,29 +241,8 @@ int mmtp_processing(udp_packet_t *udp_packet)
 
     __TRACE("data len: %d", udp_packet->data_length);
 
-    if (lls_slt_monitor && (NULL == lls_slt_monitor->lls_sls_mmt_monitor))
-    {
-        lls_sls_mmt_monitor = lls_sls_mmt_monitor_create();
-        lls_sls_mmt_monitor->lls_mmt_session = matching_lls_slt_mmt_session;
-        lls_sls_mmt_monitor->atsc3_lls_slt_service = matching_lls_slt_mmt_session->atsc3_lls_slt_service;
-        //lls_sls_mmt_monitor->video_packet_id = matching_lls_slt_mmt_session->video_packet_id;
-        //lls_sls_mmt_monitor->audio_packet_id = matching_lls_slt_mmt_session->audio_packet_id;
-        //lls_sls_mmt_monitor->lls_sls_monitor_output_buffer.has_written_init_box = false;
-        lls_slt_monitor->lls_sls_mmt_monitor = lls_sls_mmt_monitor;
-        lls_slt_monitor_add_lls_sls_mmt_monitor(lls_slt_monitor, lls_sls_mmt_monitor);
-
-        atsc3_mmt_mfu_context = atsc3_mmt_mfu_context_new();
-        atsc3_mmt_mfu_context->matching_lls_sls_mmt_session = matching_lls_slt_mmt_session;
-        atsc3_mmt_mfu_context->lls_slt_monitor = lls_slt_monitor;
-
-        mmtp_flow = mmtp_flow_new();
-        atsc3_mmt_mfu_context->mmtp_flow = mmtp_flow;
-        
-        udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container_t_init();
-        atsc3_mmt_mfu_context->udp_flow_latest_mpu_sequence_number_container = udp_flow_latest_mpu_sequence_number_container;
-    }
-
     //parsing mmtp packet
+    mmtp_packet_header_t* mmtp_packet_header = NULL;
     mmtp_packet_header = mmtp_packet_header_parse_from_block_t(udp_packet->data);
 
     if (NULL == mmtp_packet_header) {
@@ -228,8 +276,8 @@ int mmtp_processing(udp_packet_t *udp_packet)
             __WARN("Non-timed payload: packet_id: %u", mmtp_packet_header->mmtp_packet_id);
         }
 
-        if (mmtp_mpu_packet)
-            mmtp_mpu_packet_free(&mmtp_mpu_packet);
+//[kueihua]        if (mmtp_mpu_packet)
+//[kueihua]            mmtp_mpu_packet_free(&mmtp_mpu_packet);
     }
     else if (mmtp_packet_header->mmtp_payload_type == 0x2)
     {
@@ -316,13 +364,10 @@ cleanup:
 
 void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet)
 {
-    //mmtp_packet_header_t* mmtp_packet_header = NULL;
-    lls_sls_mmt_session_t* matching_lls_slt_mmt_session = NULL;
-
     //get udp packet
     udp_packet_t* udp_packet = process_packet_from_pcap(user, pkthdr, packet);
 
-    if (!udp_packet) {
+    if (NULL == udp_packet) {
         __ERROR("process_packet_from_pcap() return error!!");
         return;
     }
@@ -335,8 +380,14 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
 
     //check for LLS packet
     if (udp_packet->udp_flow.dst_ip_addr == LLS_DST_ADDR && udp_packet->udp_flow.dst_port == LLS_DST_PORT) {
-        lls_table_t* lls_table = lls_table_create_or_update_from_lls_slt_monitor(lls_slt_monitor, udp_packet->data);
-        
+        uint32_t parsed;
+        uint32_t parsed_update;
+        uint32_t parsed_error;
+
+        //lls_table_t* lls_table = lls_table_create_or_update_from_lls_slt_monitor(lls_slt_monitor, udp_packet->data);
+        lls_table_t* lls_table = lls_table_create_or_update_from_lls_slt_monitor_with_metrics(
+            lls_slt_monitor, udp_packet->data, &parsed, &parsed_update, &parsed_error);
+
         if (lls_table) {
             if (lls_table->lls_table_id == SLT) {
                 //capture SLT services into alc and mmt session flows
@@ -357,7 +408,15 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
                 }
 
                 //set lls_sls_alc_monitor/lls_sls_alc_monitor to input_svc_id
-                set_monitor_to_svc_id(lls_slt_monitor, input_svc_id);
+                lls_slt_service_id_t* lls_slt_service_id = NULL;
+                for (int i=0; i < lls_slt_monitor->lls_slt_service_id_v.count; i++)
+                {
+                    lls_slt_service_id = lls_slt_monitor->lls_slt_service_id_v.data[i];
+                }
+
+                //if no lls_slt_service_id, or service_id not matched
+                if ((NULL == lls_slt_service_id) || (input_svc_id != lls_slt_service_id->service_id))
+                    set_sls_monitor_from_svc_id(lls_slt_monitor, input_svc_id);
             }
         }
 
