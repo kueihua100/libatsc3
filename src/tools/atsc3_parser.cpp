@@ -27,7 +27,6 @@
 
 #define _ENABLE_DEBUG true
 
-
 lls_slt_monitor_t* lls_slt_monitor;
 lls_sls_alc_monitor_t* lls_sls_alc_monitor = NULL;
 lls_sls_mmt_monitor_t* lls_sls_mmt_monitor = NULL;
@@ -206,12 +205,9 @@ int route_processing(udp_packet_t *udp_packet)
         atsc3_alc_packet_persist_to_toi_resource_process_sls_mbms_and_emit_callback(
             &udp_packet->udp_flow, &alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
     
-#if (DUMP_ENABLE & MEDIA_DUMP)
-        //pack distinct recovering files into one file
-        //dump_media_from_recover_file(udp_flow, *alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
         //pack media alc packet into one file
         dump_media_from_alc_packet(&udp_packet->udp_flow, alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
-#endif
+
         //free alc packet
         alc_packet_free(&alc_packet);
 
@@ -423,7 +419,7 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
         goto cleanup;
     }
 
-    //ROUTE (ALC) prcessing
+    //ROUTE prcessing
     route_processing(udp_packet);
 
     //MMTP processing
@@ -499,6 +495,8 @@ void dbg_flag_and_data_init()
 
     //enable flag to dump lls/sls table
     _LLS_DUMP_ENABLED  = 1; //dump lls tables to lls.dump
+    //enable to media data
+    _MEDIA_DUMP = 1;
 
     //global variables initial
     lls_slt_monitor = lls_slt_monitor_create();

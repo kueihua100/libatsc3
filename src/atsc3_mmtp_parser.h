@@ -83,9 +83,6 @@
 extern "C" {
 #endif
 
-#if (DUMP_ENABLE & SLS_MMTP_DUMP)
-//#include "atsc3_mmtp_packet_types.h"
-//#include "atsc3_mmt_signalling_message.h"
 
 void mmtp_signal_packet_dump(mmtp_signalling_packet_t* mmtp_signalling_packet);
 void mmtp_signal_packet_header_dump(mmtp_packet_header_t* mmtp_packet_header);
@@ -97,11 +94,8 @@ void mmtp_signal_atsc3_payload_dump(mmt_signalling_message_header_and_payload_t*
 void mmtp_mpu_packet_dump(mmtp_mpu_packet_t* mmtp_mpu_packet);
 void mmtp_mpu_packet_header_dump(mmtp_packet_header_t* mmtp_packet_header);
 
-#endif
-
 mmtp_packet_header_t* mmtp_packet_header_parse_from_block_t(block_t* udp_packet);
 void mmtp_packet_header_dump(mmtp_packet_header_t* mmtp_packet_header);
-
 
 /**
  * internal packet handling methods below, you probably don't want to invoke these...

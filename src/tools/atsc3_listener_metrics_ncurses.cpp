@@ -334,12 +334,8 @@ static void route_process_from_alc_packet(udp_flow_t* udp_flow, alc_packet_t **a
                                                                                 alc_packet,
                                                                                 lls_slt_monitor->lls_sls_alc_monitor);
 
-#if (DUMP_ENABLE & MEDIA_DUMP)
-    //pack distinct recovering files into one file
-    //dump_media_from_recover_file(udp_flow, *alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
     //pack media alc packet into one file
     dump_media_from_alc_packet(udp_flow, *alc_packet, lls_slt_monitor->lls_sls_alc_monitor);
-#endif
 
     if(lls_slt_monitor->lls_sls_alc_monitor->lls_sls_monitor_output_buffer.has_written_init_box && lls_slt_monitor->lls_sls_alc_monitor->lls_sls_monitor_output_buffer.should_flush_output_buffer) {
      
@@ -654,6 +650,9 @@ int main(int argc,char **argv) {
 
     _MMT_SIGNALLING_MESSAGE_DEBUG_ENABLED = 1;
     _MMT_SIGNALLING_MESSAGE_TRACE_ENABLED = 1;
+
+    //enable to media data
+    _MEDIA_DUMP = 1;
 
 /////////////////////////////////////////////////
 

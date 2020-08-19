@@ -52,37 +52,31 @@
 int _LLS_INFO_ENABLED  = 0;
 int _LLS_DEBUG_ENABLED = 0;
 int _LLS_TRACE_ENABLED = 0;
-int _LLS_DUMP_ENABLED  = 0;
 
-#if (DUMP_ENABLE & LLS_DUMP)
+int _LLS_DUMP_ENABLED = 0;
 FILE* lls_fptr = NULL;
-FILE* sls_mmtp_fptr = NULL;
-
-bool  lls_dump_en = true;
 
 int lls_dump(const char *format, ...)
 {
-    if (lls_dump_en && !lls_fptr) {
+    if (NULL == lls_fptr) {
         lls_fptr = fopen("lls.dump", "w");
-        if(!lls_fptr) {
-            lls_dump_en = false;
-            lls_fptr = stderr;
+        if (NULL == lls_fptr) {
+            return -1;
         }
     }
-
+    
     va_list argptr;
-	va_start(argptr, format);
-	vfprintf(lls_fptr, format, argptr);
+    va_start(argptr, format);
+    vfprintf(lls_fptr, format, argptr);
     va_end(argptr);
     fflush(lls_fptr);
     
-	return 0;
+    return 0;
 }
 
 #define LLS_DUMPLN(...) lls_dump(__VA_ARGS__);lls_dump("%s%s","\r","\n")
-#define LLS_DUMPT(...)  if(lls_dump_en) { lls_dump("%s:%d:[%.4f]: ",__FILE__,__LINE__, gt()); LLS_DUMPLN(__VA_ARGS__); }
-#define LLS_DUMPN(...)  if(lls_dump_en) { LLS_DUMPLN(__VA_ARGS__); }
-#endif //DUMP_ENABLE
+#define LLS_DUMPT(...)  if(_LLS_DUMP_ENABLED) { lls_dump("%s:%d:[%.4f]: ",__FILE__,__LINE__, gt()); LLS_DUMPLN(__VA_ARGS__); }
+#define LLS_DUMPN(...)  if(_LLS_DUMP_ENABLED) { LLS_DUMPLN(__VA_ARGS__); }
 
 
 char* LLS_SERVICE_CATEGORY_VALUES[] = {"atsc reserved", "linear av", "linear audio", "app based svc.", "esg service", "eas service", "certificateData", "atsc other" };
@@ -479,12 +473,10 @@ lls_table_t* atsc3_lls_table_parse_raw_xml(atsc3_lls_table_t* lls_table) {
 	//create the xml document payload
 	_LLS_DEBUGN("lls_create_table, raw xml payload is: \n%s", lls_table->raw_xml.xml_payload);
 
-#if (DUMP_ENABLE & LLS_DUMP)
 	//dump lls xml payload to lls.dump
 	LLS_DUMPT("dump lls_table, raw xml payload size is: %d\n", lls_table->raw_xml.xml_payload_size);
 	LLS_DUMPN("%s", lls_table->raw_xml.xml_payload);
 	LLS_DUMPN("=======================================================\n");
-#endif //DUMP_ENABLE
 
 	lls_table->xml_document = xml_payload_document_parse(lls_table->raw_xml.xml_payload, lls_table->raw_xml.xml_payload_size);
 

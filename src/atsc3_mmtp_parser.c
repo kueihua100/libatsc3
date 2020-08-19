@@ -19,34 +19,29 @@
 int _MMTP_DEBUG_ENABLED = 0;
 int _MMTP_TRACE_ENABLED = 0;
 
-
-#if (DUMP_ENABLE & SLS_MMTP_DUMP)
 int _SLS_MMTP_DUMP_ENABLED = 1;
-FILE* __DUMP_SLS_MMTP_FILE = NULL;
-bool  __DUMP_SLS_MMTP_AVAILABLE = true;
+FILE* sls_mtp_fptr = NULL;
 
-int sls_mmtp_dump(const char *format, ...)  {
-
-  if(__DUMP_SLS_MMTP_AVAILABLE && !__DUMP_SLS_MMTP_FILE) {
-    __DUMP_SLS_MMTP_FILE = fopen("sls_mmtp.dump", "w");
-    if(!__DUMP_SLS_MMTP_FILE) {
-      __DUMP_SLS_MMTP_AVAILABLE = false;
-      __DUMP_SLS_MMTP_FILE = stderr;
+int sls_mmtp_dump(const char *format, ...)
+{
+    if (NULL == sls_mtp_fptr) {
+        sls_mtp_fptr = fopen("sls_mmtp.dump", "w");
+        if (NULL == sls_mtp_fptr) {
+            return -1;
+        }
     }
-  }
 
     va_list argptr;
 	va_start(argptr, format);
-	vfprintf(__DUMP_SLS_MMTP_FILE, format, argptr);
+	vfprintf(sls_mtp_fptr, format, argptr);
     va_end(argptr);
-    fflush(__DUMP_SLS_MMTP_FILE);
+    fflush(sls_mtp_fptr);
 	return 0;
 }
 
 #define _SLS_MMTP_DUMPLN(...) sls_mmtp_dump(__VA_ARGS__);sls_mmtp_dump("%s%s","\r","\n")
 #define _SLS_MMTP_DUMPT(...)  if(_SLS_MMTP_DUMP_ENABLED) { sls_mmtp_dump("%s:%d:[%.4f]: ",__FILE__,__LINE__, gt());_SLS_MMTP_DUMPLN(__VA_ARGS__); }
 #define _SLS_MMTP_DUMPN(...)  if(_SLS_MMTP_DUMP_ENABLED) { _SLS_MMTP_DUMPLN(__VA_ARGS__); }
-#endif //DUMP_ENABLE
 
 /*
  * Open items:
@@ -273,7 +268,7 @@ void mmtp_packet_header_dump(mmtp_packet_header_t* mmtp_packet_header) {
 	__MMTP_PARSER_DEBUG("------------------");
 }
 
-#if (DUMP_ENABLE & SLS_MMTP_DUMP)
+
 void mmtp_signal_packet_dump(mmtp_signalling_packet_t* mmtp_signalling_packet) {
 	if(mmtp_signalling_packet->mmtp_payload_type != 0x02) {
 		__MMSM_ERROR("signalling_message_dump, payload_type 0x%x != 0x02", mmtp_signalling_packet->mmtp_payload_type);
@@ -483,5 +478,4 @@ void mmtp_mpu_packet_header_dump(mmtp_packet_header_t* mmtp_packet_header) {
 	_SLS_MMTP_DUMPN("------------------------------------------------------");
 }
 
-#endif //DUMP_ENABLE
 

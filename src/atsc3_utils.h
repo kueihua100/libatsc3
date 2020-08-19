@@ -231,4 +231,6 @@ uint16_t parsePortIntoIntval(char* dst_port);
 #define _ATSC3_UTILS_TRACEA(...)  if(_ATSC3_UTILS_TRACE_ENABLED) { _ATSC3_UTILS_PRINTF(__VA_ARGS__); }
 #define _ATSC3_UTILS_TRACEN(...)  if(_ATSC3_UTILS_TRACE_ENABLED) { _ATSC3_UTILS_PRINTLN(__VA_ARGS__); }
 
+#define _PATCH_2_WORK_ true
+
 #endif /* ATSC3_UTILS_H_ */
