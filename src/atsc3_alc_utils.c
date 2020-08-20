@@ -1517,6 +1517,7 @@ void dump_media_from_recover_file(udp_flow_t* udp_flow, alc_packet_t* alc_packet
 {
     if (!_MEDIA_DUMP) {
         __ALC_UTILS_DEBUG("[%s]Disable to dump media!!", __FUNCTION__);
+        return;
     }
 
     __ALC_UTILS_DEBUG("[%s] %u, %u, %d", __FILE__, alc_packet->def_lct_hdr->tsi, 
@@ -1610,6 +1611,7 @@ void dump_media_from_alc_packet(udp_flow_t* udp_flow, alc_packet_t* alc_packet, 
 {
     if (!_MEDIA_DUMP) {
         __ALC_UTILS_DEBUG("[%s]Disable to dump media!!", __FUNCTION__);
+        return;
     }
     
     __ALC_UTILS_DEBUG("[%s] %u, %u, %d", __FILE__, alc_packet->def_lct_hdr->tsi, 
