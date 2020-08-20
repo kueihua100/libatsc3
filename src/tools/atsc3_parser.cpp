@@ -272,8 +272,11 @@ int mmtp_processing(udp_packet_t *udp_packet)
             __WARN("Non-timed payload: packet_id: %u", mmtp_packet_header->mmtp_packet_id);
         }
 
-//[kueihua]        if (mmtp_mpu_packet)
-//[kueihua]            mmtp_mpu_packet_free(&mmtp_mpu_packet);
+        //[note] canot free mmtp_mpu_packet
+        // Due to it will be added at mpu_sequence_number_mmtp_mpu_packet_collection_add_mmtp_mpu_packet()
+        // for later use.
+        //if (mmtp_mpu_packet)
+        //    mmtp_mpu_packet_free(&mmtp_mpu_packet);
     }
     else if (mmtp_packet_header->mmtp_payload_type == 0x2)
     {
